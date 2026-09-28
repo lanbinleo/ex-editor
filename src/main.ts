@@ -9,6 +9,7 @@ import { SuggestionController } from './controller/suggestionController';
 import { createBackup, readBackup } from './storage/backup';
 import { ExSettingTab, DEFAULT_SETTINGS } from './settings';
 import { ExSidebarView, VIEW_TYPE_EX_SIDEBAR } from './view/sidebar';
+import { SnapshotModal } from './view/snapshotModal';
 import type { ExSettings } from './types';
 
 /**
@@ -57,6 +58,11 @@ export default class ExEditorPlugin extends Plugin {
 			id: 'accept-all',
 			name: '接受全部建议（单事务，可一次撤销）',
 			callback: () => void this.suggestions.acceptAll(),
+		});
+		this.addCommand({
+			id: 'snapshots',
+			name: '快照与恢复…',
+			callback: () => new SnapshotModal(this.app, this).open(),
 		});
 		this.addCommand({
 			id: 'cancel-check',

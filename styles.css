@@ -207,13 +207,34 @@ body.theme-dark {
 	color: var(--text-error, #d2405a);
 }
 
-/* 主要动作（检查 / 接受）：强调色文字的安静按钮，悬停浮现浅染 */
-.ex-btn-check,
+/* 主要动作（检查）：primary 实心按钮，需要压过上面的按钮复位 */
+.ex-root button.mod-cta {
+	background: var(--interactive-accent);
+	background-color: var(--interactive-accent);
+	border: 1px solid var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-weight: 500;
+}
+
+.ex-root button.mod-cta:hover:not(:disabled) {
+	background: var(--interactive-accent-hover);
+	background-color: var(--interactive-accent-hover);
+	border-color: var(--interactive-accent-hover);
+	color: var(--text-on-accent);
+}
+
+.ex-root button.mod-cta:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* 次要主要动作（运行 / 应用 / 接受）：强调色文字的安静按钮，悬停浮现浅染 */
+.ex-btn-run,
 .ex-btn-accept {
 	color: var(--ex-accent);
 }
 
-.ex-btn-check:hover:not(:disabled),
+.ex-btn-run:hover:not(:disabled),
 .ex-btn-accept:hover:not(:disabled) {
 	border-color: color-mix(in srgb, var(--ex-accent) 40%, transparent);
 	background: color-mix(in srgb, var(--ex-accent) 10%, transparent);
@@ -359,19 +380,8 @@ body.theme-dark {
 	padding: 8px var(--ex-gutter) 0;
 }
 
-/* ---------------- 窄面板：只留 Logo 与操作 ----------------
- * 阈值取「标题开始放不下」的位置（标题文字最小宽约 70px）：
- * 宁可早点折叠标题，也不要出现省略号 */
+/* ---------------- 窄面板：选项卡分组紧凑化（标题栏常驻，选项已独立成行不抢空间） ---------------- */
 @container (max-width: 360px) {
-	.ex-brand,
-	.ex-subtitle {
-		display: none;
-	}
-
-	.ex-identity {
-		flex: 0 0 auto;
-	}
-
 	.ex-seg-item {
 		padding: 2px 6px;
 	}
@@ -488,9 +498,8 @@ body.theme-dark {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
-	margin-top: 8px;
-	padding: 8px var(--ex-gutter) 8px;
-	border-top: 1px solid var(--background-modifier-border);
+	margin-top: 4px;
+	padding: 6px var(--ex-gutter) 8px;
 }
 
 .ex-composer-input {
@@ -540,41 +549,38 @@ body.theme-dark {
 	background: color-mix(in srgb, var(--ex-accent) 10%, transparent);
 }
 
-/* ---------------- 快照折叠区 ---------------- */
-.ex-backups {
-	padding: 2px var(--ex-gutter) 6px;
+/* ---------------- 快照模态框（命令面板打开，不在侧边栏内） ---------------- */
+.ex-snap {
+	min-width: 320px;
 }
 
-.ex-backups summary {
-	cursor: pointer;
-	color: var(--text-faint);
-	font-size: var(--ex-font-meta);
-	user-select: none;
-	padding: 4px 0;
+.ex-snap-toolbar {
+	margin-bottom: 10px;
 }
 
-.ex-backups summary:hover {
-	color: var(--text-muted);
-}
-
-.ex-backup-list {
+.ex-snap-list {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
-	padding: 6px 0 2px 10px;
-	max-height: 220px;
+	gap: 2px;
+	max-height: 320px;
 	overflow-y: auto;
 }
 
-.ex-backup-row {
+.ex-snap-row {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	gap: 8px;
-	font-size: var(--ex-font-meta);
+	gap: 12px;
+	padding: 5px 0;
+	font-size: 0.95em;
+	border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.ex-backup-time {
+.ex-snap-row:last-child {
+	border-bottom: none;
+}
+
+.ex-snap-time {
 	color: var(--text-muted);
 }
 

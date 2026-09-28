@@ -3,12 +3,10 @@ import type { WorkspaceLeaf } from 'obsidian';
 import type ExEditorPlugin from '../main';
 import type { CheckScope } from '../controller/checkController';
 import { diffTexts } from '../core/diff';
-import { listBackups } from '../storage/backup';
-import type { BackupInfo } from '../storage/backup';
 import { formatYuan } from '../llm/pricing';
 import { STRENGTH_LABELS } from '../types';
 import type { CheckStrength, RewritePreview } from '../types';
-import { formatClock, truncate } from '../util';
+import { truncate } from '../util';
 import { renderSuggestionCard, updateCardState } from './card';
 
 export const VIEW_TYPE_EX_SIDEBAR = 'exeditor-sidebar';
@@ -20,15 +18,6 @@ const LEAVE_MS = 220;
 const SCOPE_PREVIEW_CHARS = 160;
 /** 重写预览 diff 块数上限 */
 const MAX_DIFF_BLOCKS = 300;
-
-const BACKUP_REASON_LABELS: Record<string, string> = {
-	accept: '接受前',
-	rewrite: '改写前',
-	restore: '恢复前',
-	manual: '手动',
-	check: '检查前',
-	unknown: '快照',
-};
 
 function fmtTokens(n: number): string {
 	if (n < 1000) return String(n);
@@ -74,8 +63,6 @@ export class ExSidebarView extends ItemView {
 	private ignoreAllBtn!: HTMLButtonElement;
 	private composerInput!: HTMLTextAreaElement;
 	private composerRunBtn!: HTMLButtonElement;
-	private backupsDetails!: HTMLDetailsElement;
-	private backupListEl!: HTMLElement;
 	private statsEl!: HTMLElement;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: ExEditorPlugin) {
@@ -109,7 +96,7 @@ export class ExSidebarView extends ItemView {
 		identityText.createDiv({ cls: 'ex-brand', text: 'ExEditor' });
 		this.subtitleEl = identityText.createDiv({ cls: 'ex-subtitle', text: '' });
 
-		this.runBtn = header.createEl('button', { cls: 'ex-btn ex-btn-check', text: '检查' });
+		this.runBtn = header.createEl('button', { cls: 'ex-btn mod-cta', text: '检查' });
 		this.runBtn.addEventListener('click', () => void this.plugin.runCheck(this.checkScope));
 		this.cancelBtn = header.createEl('button', { cls: 'ex-btn ex-btn-cancel', text: '取消' });
 		this.cancelBtn.addEventListener('click', () => this.plugin.checker.cancelActive());
@@ -197,14 +184,6 @@ export class ExSidebarView extends ItemView {
 			void this.plugin.rewriter.run(this.instructionText);
 		});
 
-		// 快照折叠区：展开时才异步加载列表
-		this.backupsDetails = root.createEl('details', { cls: 'ex-backups' });
-		this.backupsDetails.createEl('summary', { text: '快照与恢复' });
-		this.backupsDetails.addEventListener('toggle', () => {
-			if (this.backupsDetails.open) void this.fillBackups();
-		});
-		this.backupListEl = this.backupsDetails.createDiv({ cls: 'ex-backup-list' });
-
 		this.statsEl = root.createDiv({ cls: 'ex-stats', text: '' });
 
 		this.unsubscribers.push(
@@ -225,48 +204,6 @@ export class ExSidebarView extends ItemView {
 	private autoGrowComposer(): void {
 		this.composerInput.setCssStyles({ height: 'auto' });
 		this.composerInput.setCssStyles({ height: `${Math.min(this.composerInput.scrollHeight, 140)}px` });
-	}
-
-	/** 快照列表（仅在用户展开/手动刷新时重建此折叠区内容） */
-	private async fillBackups(): Promise<void> {
-		const listEl = this.backupListEl;
-		listEl.empty();
-		const ctx = this.plugin.resolver.resolve();
-		if (!ctx) {
-			listEl.createDiv({ cls: 'ex-hint', text: '打开文档后可查看该篇的快照' });
-			return;
-		}
-		const manual = listEl.createEl('button', { cls: 'ex-btn', text: '立即备份当前内容' });
-		manual.addEventListener('click', () => void this.backupAndRefresh());
-		let backups: BackupInfo[] = [];
-		try {
-			backups = await listBackups(this.plugin.app, this.plugin.settings.backupDir, ctx.file);
-		} catch {
-			backups = [];
-		}
-		if (!backups.length) {
-			listEl.createDiv({ cls: 'ex-hint', text: '暂无快照。批量接受与改写应用前会自动备份。' });
-			return;
-		}
-		for (const bp of backups) {
-			const row = listEl.createDiv({ cls: 'ex-backup-row' });
-			row.createSpan({
-				cls: 'ex-backup-time',
-				text: `${formatClock(bp.mtime)} · ${BACKUP_REASON_LABELS[bp.reason] ?? '快照'}`,
-			});
-			const restore = row.createEl('button', { cls: 'ex-btn', text: '恢复' });
-			restore.addEventListener('click', () => void this.restoreAndRefresh(bp.path));
-		}
-	}
-
-	private async backupAndRefresh(): Promise<void> {
-		await this.plugin.backupActiveFile();
-		await this.fillBackups();
-	}
-
-	private async restoreAndRefresh(backupPath: string): Promise<void> {
-		await this.plugin.restoreBackup(backupPath);
-		await this.fillBackups();
 	}
 
 	/** 精确同步可见卡片：按 id 增删、按状态原地更新、按位置重排序 */
