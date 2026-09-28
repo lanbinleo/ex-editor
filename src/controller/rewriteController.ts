@@ -54,6 +54,24 @@ export class RewriteController {
 		this.emit();
 	}
 
+	private revalidateTimer: number | undefined;
+
+	/** 编辑停止后（防抖）校验当前文件的预览：原文已变则直接丢弃（反正永远无法安全应用） */
+	scheduleRevalidate(): void {
+		if (this.revalidateTimer !== undefined) window.clearTimeout(this.revalidateTimer);
+		this.revalidateTimer = window.setTimeout(() => {
+			this.revalidateTimer = undefined;
+			const ctx = this.plugin.resolver.resolve();
+			if (!ctx) return;
+			const preview = this.previews.get(ctx.file.path);
+			if (!preview) return;
+			if (ctx.view.state.doc.sliceString(preview.from, preview.to) !== preview.original) {
+				this.previews.delete(ctx.file.path);
+				this.emit();
+			}
+		}, 400);
+	}
+
 	/** 发起重写：选中文字优先，无选区取光标所在段落 */
 	async run(instruction: string): Promise<void> {
 		const text = instruction.trim();

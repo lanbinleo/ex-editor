@@ -81,10 +81,13 @@ export default class ExEditorPlugin extends Plugin {
 			this.app.workspace.on('file-open', (file) => this.resolver.noteFile(file)),
 		);
 		// 选区/文档变化 → 侧边栏范围预览实时刷新（节流在 resolver 内）；
-		// 文档被编辑 → 防抖重校验建议，原文找不到的灰显（stale）
+		// 文档被编辑 → 防抖重校验：建议原文找不到的灰显，改写预览失效的清除
 		this.registerEditorExtension(
 			EditorView.updateListener.of((update) => {
-				if (update.docChanged) this.suggestions.scheduleRevalidate();
+				if (update.docChanged) {
+					this.suggestions.scheduleRevalidate();
+					this.rewriter.scheduleRevalidate();
+				}
 				if (update.selectionSet || update.docChanged) this.resolver.noteEditorActivity();
 			}),
 		);
