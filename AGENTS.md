@@ -3,7 +3,7 @@
 ## Project Snapshot
 
 - ExEditor（有经验的编辑）：Obsidian 第三方插件，面向中文写作者的 AI 校对与改稿工具。
-- 当前阶段：M3 修改层次与指令重写（v0.4.0，dev/0.4.0 分支开发中）；M2 检查范围与过程反馈已验收合并 main（tag `v0.3.0`），见 `docs/roadmap.md`。
+- 当前阶段：M3 修改层次与指令重写（v0.4.0，dev/0.4.0 分支，待真机验收）；强度三档/指令重写/快照/批量接受已实现，见 `docs/roadmap.md`。
 - 技术栈：TypeScript（strict）+ esbuild（打包到 `main.js`）+ vitest + eslint（eslint-plugin-obsidianmd）。运行时依赖 Obsidian 内置的 CodeMirror 6（`@codemirror/*` 仅作 devDependencies 提供类型，esbuild 中 external）。
 - 开发位置特殊：本仓库就在 vault 内（`写作人生/.obsidian/plugins/exeditor/`），**构建产物 main.js 即运行时插件**，原地开发，无部署步骤。
 - 本仓库是独立 Git 仓库，vault 的 `.gitignore` 已排除本目录；旧插件 `editing-suggestions` 仍安装在同一 vault（id 不同，共存，M4 后由用户手动停用）。

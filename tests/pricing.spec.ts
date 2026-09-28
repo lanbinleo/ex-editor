@@ -9,7 +9,10 @@ const base: ExSettings = {
 	apiKey: 'sk-test',
 	model: 'deepseek-flash',
 	thinkingLevel: 'auto',
+	checkStrength: 'standard',
 	pricing: {},
+	backupDir: '.exeditor/backups',
+	backupKeep: 20,
 };
 
 describe('pricing', () => {

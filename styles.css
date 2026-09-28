@@ -133,6 +133,17 @@ body.theme-dark {
 	cursor: default;
 }
 
+/* 强度选择器（错别字/病句/润色） */
+.ex-strength-select {
+	font-size: var(--ex-font-meta);
+	padding: 2px 4px;
+	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+
 .ex-brand-icon {
 	display: inline-flex;
 	align-items: center;
@@ -423,6 +434,147 @@ body.theme-dark {
 	overflow: hidden;
 	word-break: break-all;
 	white-space: pre-wrap;
+}
+
+/* ---------------- 改写预览 ---------------- */
+.ex-rewrite {
+	margin: 6px var(--ex-gutter) 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ex-radius);
+	padding: 8px 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.ex-rewrite-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.ex-rewrite-title {
+	font-weight: 600;
+	color: var(--text-normal);
+	font-size: var(--ex-font-ui);
+}
+
+.ex-rewrite-actions {
+	display: flex;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.ex-rewrite-body {
+	max-height: 320px;
+	overflow-y: auto;
+	font-size: var(--ex-font-body);
+	line-height: var(--ex-line);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	border-radius: var(--radius-s);
+	background: var(--background-primary-alt);
+	padding: 8px 9px;
+	color: var(--text-normal);
+}
+
+.ex-rw-same {
+	color: var(--text-muted);
+}
+
+.ex-hint {
+	color: var(--text-faint);
+	font-size: var(--ex-font-meta);
+	line-height: 1.5;
+}
+
+/* ---------------- 指令输入（常驻收起，聚焦展开） ---------------- */
+.ex-bottom {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 8px;
+	padding: 8px var(--ex-gutter) 8px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.ex-composer-input {
+	width: 100%;
+	min-height: 34px;
+	max-height: 140px;
+	overflow-y: hidden;
+	resize: none;
+	font-family: inherit;
+	font-size: var(--ex-font-ui);
+	line-height: 1.6;
+	padding: 7px 10px;
+	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+
+.ex-composer-input:focus {
+	outline: none;
+	border-color: var(--background-modifier-border-focus);
+}
+
+/* 折叠态只有一行输入；聚焦或有内容时展开运行按钮 */
+.ex-bottom .ex-composer-foot {
+	display: none;
+}
+
+.ex-bottom.ex-open .ex-composer-foot {
+	display: flex;
+	justify-content: flex-end;
+}
+
+.ex-btn-run {
+	color: var(--ex-accent);
+}
+
+.ex-btn-run:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--ex-accent) 40%, transparent);
+	background: color-mix(in srgb, var(--ex-accent) 10%, transparent);
+}
+
+/* ---------------- 快照折叠区 ---------------- */
+.ex-backups {
+	padding: 2px var(--ex-gutter) 6px;
+}
+
+.ex-backups summary {
+	cursor: pointer;
+	color: var(--text-faint);
+	font-size: var(--ex-font-meta);
+	user-select: none;
+	padding: 4px 0;
+}
+
+.ex-backups summary:hover {
+	color: var(--text-muted);
+}
+
+.ex-backup-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px 0 2px 10px;
+	max-height: 220px;
+	overflow-y: auto;
+}
+
+.ex-backup-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+	font-size: var(--ex-font-meta);
+}
+
+.ex-backup-time {
+	color: var(--text-muted);
 }
 
 /* ---------------- 空态 ---------------- */

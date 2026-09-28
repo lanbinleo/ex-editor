@@ -1,9 +1,13 @@
 import { Notice } from 'obsidian';
+import type ExEditorPlugin from '../main';
 import type { EditorContextResolver } from '../editorContext';
 import type { LocatedSuggestion } from '../core/validate';
 import { uniqueOccurrence } from '../core/validate';
 import { appendLocated as mergeEntries } from '../core/append';
+import { dropOverlaps, planBatchEdit } from '../core/apply';
+import type { AcceptEdit } from '../core/apply';
 import { findProtectedRanges } from '../core/protected';
+import { createBackup } from '../storage/backup';
 import type { SuggestionEntry, SuggestionStatus } from '../types';
 
 /**
@@ -17,7 +21,10 @@ export class SuggestionController {
 	private listeners = new Set<() => void>();
 	private revalidateTimer: number | undefined;
 
-	constructor(private resolver: EditorContextResolver) {}
+	constructor(
+		private resolver: EditorContextResolver,
+		private plugin: ExEditorPlugin,
+	) {}
 
 	subscribe(fn: () => void): () => void {
 		this.listeners.add(fn);
@@ -49,6 +56,73 @@ export class SuggestionController {
 		if (!ctx) return;
 		this.files.delete(ctx.file.path);
 		this.emit();
+	}
+
+	/** 清空某文件的全部建议（快照恢复后） */
+	clearFile(path: string): void {
+		this.files.delete(path);
+		this.emit();
+	}
+
+	/** 移除某范围内的建议（重写应用后清理，best effort） */
+	removeInRange(path: string, from: number, to: number): void {
+		const list = this.files.get(path);
+		if (!list?.length) return;
+		const kept = list.filter((e) => !(e.from >= from && e.to <= to));
+		if (kept.length !== list.length) {
+			this.files.set(path, kept);
+			this.emit();
+		}
+	}
+
+	/** 批量接受当前文档的全部 pending 建议：合并为单事务（一次 Ctrl+Z），应用前快照 */
+	async acceptAll(): Promise<void> {
+		const ctx = this.resolver.resolve();
+		if (!ctx) {
+			new Notice('没有活动的文档');
+			return;
+		}
+		const list = this.files.get(ctx.file.path) ?? [];
+		const pending = list.filter((e) => e.suggestion.status === 'pending');
+		if (!pending.length) {
+			new Notice('没有可接受的建议');
+			return;
+		}
+		const docText = ctx.view.state.doc.toString();
+		const edits: AcceptEdit[] = [];
+		const acceptedIds: string[] = [];
+		for (const entry of pending) {
+			const pos = this.relocate(entry, docText);
+			if (!pos) {
+				entry.suggestion.status = 'stale';
+				continue;
+			}
+			edits.push({ id: entry.suggestion.id, from: pos.from, to: pos.to, insert: entry.suggestion.replacement });
+			acceptedIds.push(entry.suggestion.id);
+		}
+		const clean = dropOverlaps(edits);
+		if (!clean.length) {
+			this.emit();
+			new Notice('建议均已失效，请重新检查');
+			return;
+		}
+		// 安全规则：批量修改前必须快照
+		await createBackup(
+			this.plugin.app,
+			this.plugin.settings.backupDir,
+			this.plugin.settings.backupKeep,
+			ctx.file,
+			'accept',
+		);
+		const plan = planBatchEdit(docText.length, [], clean);
+		ctx.view.dispatch({ changes: plan.changes, userEvent: 'ex.accept' });
+		const applied = new Set(clean.map((e) => e.id));
+		this.files.set(
+			ctx.file.path,
+			(this.files.get(ctx.file.path) ?? []).filter((e) => !applied.has(e.suggestion.id)),
+		);
+		this.emit();
+		new Notice(`已应用 ${clean.length} 条修改（可 Ctrl+Z 撤销）`);
 	}
 
 	remove(path: string, id: string): void {

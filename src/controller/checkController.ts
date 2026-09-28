@@ -78,6 +78,11 @@ export class CheckController {
 		return this.sessionCostYuan;
 	}
 
+	/** 供改写等其他 AI 动作并入会话累计费用 */
+	addSessionCost(yuan: number): void {
+		if (yuan > 0) this.sessionCostYuan += yuan;
+	}
+
 	/** 取消当前活动文件的检查（侧边栏取消按钮） */
 	cancelActive(): void {
 		const ctx = this.plugin.resolver.resolve();
@@ -229,7 +234,10 @@ export class CheckController {
 				const result = await chatCompletionStream(
 					this.plugin.settings,
 					[
-						{ role: 'system', content: buildProofreadSystemPrompt() },
+						{
+							role: 'system',
+							content: buildProofreadSystemPrompt(this.plugin.settings.checkStrength),
+						},
 						{ role: 'user', content: buildCheckUserPrompt(docText.slice(batch.from, batch.to)) },
 					],
 					{

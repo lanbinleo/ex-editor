@@ -52,6 +52,15 @@ export interface RawIssue {
   explanation?: unknown;
 }
 
+/** 检查强度：light 只查错别字标点（最小修改）/ standard 病句+错别字（默认）/ deep 深度润色 */
+export type CheckStrength = 'light' | 'standard' | 'deep';
+
+export const STRENGTH_LABELS: Record<CheckStrength, string> = {
+	light: '错别字',
+	standard: '病句',
+	deep: '润色',
+};
+
 /** 思考深度：auto 不发参数（跟随服务商默认）/ off 显式关闭 / low·medium·high·max → reasoning_effort */
 export type ThinkingLevel = 'auto' | 'off' | 'low' | 'medium' | 'high' | 'max';
 
@@ -59,6 +68,19 @@ export type ThinkingLevel = 'auto' | 'off' | 'low' | 'medium' | 'high' | 'max';
 export interface ModelPricing {
 	input: number;
 	output: number;
+}
+
+/** 重写预览：等待用户确认应用的整段改写 */
+export interface RewritePreview {
+	path: string;
+	from: number;
+	to: number;
+	original: string;
+	rewritten: string;
+	instruction: string;
+	/** 流式进行中：界面先显示纯文本，完成后切换为 diff */
+	streaming: boolean;
+	startedAt: number;
 }
 
 /** M1 设置：单一 OpenAI 兼容提供商，密钥只存本地 data.json */
@@ -69,6 +91,12 @@ export interface ExSettings {
 	apiKey: string;
 	model: string;
 	thinkingLevel: ThinkingLevel;
+	/** 检查强度（侧边栏选择器修改，持久化） */
+	checkStrength: CheckStrength;
 	/** 按模型名自定义价格（覆盖内置官方价）；键为模型名 */
 	pricing: Record<string, ModelPricing>;
+	/** 快照备份目录（vault 内路径） */
+	backupDir: string;
+	/** 每篇笔记保留的快照数量上限 */
+	backupKeep: number;
 }

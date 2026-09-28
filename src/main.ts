@@ -4,7 +4,9 @@ import { EditorView } from '@codemirror/view';
 import { EditorContextResolver } from './editorContext';
 import { CheckController } from './controller/checkController';
 import type { CheckScope } from './controller/checkController';
+import { RewriteController } from './controller/rewriteController';
 import { SuggestionController } from './controller/suggestionController';
+import { createBackup, readBackup } from './storage/backup';
 import { ExSettingTab, DEFAULT_SETTINGS } from './settings';
 import { ExSidebarView, VIEW_TYPE_EX_SIDEBAR } from './view/sidebar';
 import type { ExSettings } from './types';
@@ -18,13 +20,15 @@ export default class ExEditorPlugin extends Plugin {
 	resolver!: EditorContextResolver;
 	suggestions!: SuggestionController;
 	checker!: CheckController;
+	rewriter!: RewriteController;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
 		this.resolver = new EditorContextResolver(this.app);
-		this.suggestions = new SuggestionController(this.resolver);
+		this.suggestions = new SuggestionController(this.resolver, this);
 		this.checker = new CheckController(this);
+		this.rewriter = new RewriteController(this);
 
 		this.registerView(VIEW_TYPE_EX_SIDEBAR, (leaf) => new ExSidebarView(leaf, this));
 
@@ -50,9 +54,17 @@ export default class ExEditorPlugin extends Plugin {
 			callback: () => void this.runCheck('full'),
 		});
 		this.addCommand({
+			id: 'accept-all',
+			name: '接受全部建议（单事务，可一次撤销）',
+			callback: () => void this.suggestions.acceptAll(),
+		});
+		this.addCommand({
 			id: 'cancel-check',
-			name: '取消所有进行中的检查',
-			callback: () => this.checker.cancelAll(),
+			name: '取消所有进行中的任务',
+			callback: () => {
+				this.checker.cancelAll();
+				this.rewriter.cancelActive();
+			},
 		});
 		this.addCommand({
 			id: 'smoke-test',
@@ -121,6 +133,33 @@ export default class ExEditorPlugin extends Plugin {
 	async runCheck(scope: CheckScope): Promise<void> {
 		const added = await this.checker.run(scope);
 		if (added > 0) await this.activateSidebar();
+	}
+
+	/** 手动为当前文档创建快照 */
+	async backupActiveFile(): Promise<void> {
+		const ctx = this.resolver.resolve();
+		if (!ctx) return;
+		const ok = await createBackup(this.app, this.settings.backupDir, this.settings.backupKeep, ctx.file, 'manual');
+		new Notice(ok ? '已创建快照' : '快照失败，详见控制台');
+	}
+
+	/** 从快照恢复当前文档（恢复前先快照当前版） */
+	async restoreBackup(backupPath: string): Promise<void> {
+		const ctx = this.resolver.resolve();
+		if (!ctx) {
+			new Notice('没有活动的文档');
+			return;
+		}
+		try {
+			const content = await readBackup(this.app, backupPath);
+			await createBackup(this.app, this.settings.backupDir, this.settings.backupKeep, ctx.file, 'restore');
+			await this.app.vault.process(ctx.file, () => content);
+			this.suggestions.clearFile(ctx.file.path);
+			this.rewriter.discardPreview(ctx.file.path);
+			new Notice('已从快照恢复（恢复前内容已另行快照）');
+		} catch (e) {
+			new Notice(`恢复失败 — ${e instanceof Error ? e.message : String(e)}`, 8000);
+		}
 	}
 
 	async activateSidebar(): Promise<void> {

@@ -2,8 +2,13 @@ import { ItemView, setIcon } from 'obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
 import type ExEditorPlugin from '../main';
 import type { CheckScope } from '../controller/checkController';
+import { diffTexts } from '../core/diff';
+import { listBackups } from '../storage/backup';
+import type { BackupInfo } from '../storage/backup';
 import { formatYuan } from '../llm/pricing';
-import { truncate } from '../util';
+import { STRENGTH_LABELS } from '../types';
+import type { CheckStrength, RewritePreview } from '../types';
+import { formatClock, truncate } from '../util';
 import { renderSuggestionCard, updateCardState } from './card';
 
 export const VIEW_TYPE_EX_SIDEBAR = 'exeditor-sidebar';
@@ -13,6 +18,17 @@ const ENTER_MS = 200;
 const LEAVE_MS = 220;
 /** 范围预览的最大字符数 */
 const SCOPE_PREVIEW_CHARS = 160;
+/** 重写预览 diff 块数上限 */
+const MAX_DIFF_BLOCKS = 300;
+
+const BACKUP_REASON_LABELS: Record<string, string> = {
+	accept: '接受前',
+	rewrite: '改写前',
+	restore: '恢复前',
+	manual: '手动',
+	check: '检查前',
+	unknown: '快照',
+};
 
 function fmtTokens(n: number): string {
 	if (n < 1000) return String(n);
@@ -27,26 +43,38 @@ function fmtDuration(ms: number): string {
 }
 
 /**
- * 侧边栏：建议列表。
- * 架构红线：卡片按条目 id 精确增删改（复用 DOM 节点、保留焦点与滚动），
+ * 侧边栏：建议列表 + 改写预览 + 指令输入 + 快照。
+ * 架构红线：建议卡片按条目 id 精确增删改（复用 DOM 节点、保留焦点与滚动），
  * 绝不做 root.empty() 式整体重渲染——这是旧版插件的核心病灶。
  */
 export class ExSidebarView extends ItemView {
 	private cards = new Map<string, HTMLElement>();
 	private unsubscribers: (() => void)[] = [];
 	private checkScope: CheckScope = 'paragraph';
+	private instructionText = '';
+	private lastPreviewKey = '';
 	private subtitleEl!: HTMLElement;
 	private segButtons: HTMLButtonElement[] = [];
+	private strengthSelect!: HTMLSelectElement;
 	private runBtn!: HTMLButtonElement;
 	private cancelBtn!: HTMLButtonElement;
 	private segWrapEl!: HTMLElement;
 	private scopeBoxEl!: HTMLElement;
 	private scopeLabelEl!: HTMLElement;
 	private scopeTextEl!: HTMLElement;
+	private rewriteBoxEl!: HTMLElement;
+	private rewriteInstructionEl!: HTMLElement;
+	private rewriteBodyEl!: HTMLElement;
+	private rewriteApplyBtn!: HTMLButtonElement;
 	private emptyEl!: HTMLElement;
 	private listEl!: HTMLElement;
 	private footerEl!: HTMLElement;
+	private acceptAllBtn!: HTMLButtonElement;
 	private ignoreAllBtn!: HTMLButtonElement;
+	private composerInput!: HTMLTextAreaElement;
+	private composerRunBtn!: HTMLButtonElement;
+	private backupsDetails!: HTMLDetailsElement;
+	private backupListEl!: HTMLElement;
 	private statsEl!: HTMLElement;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: ExEditorPlugin) {
@@ -93,6 +121,14 @@ export class ExSidebarView extends ItemView {
 			});
 			this.segButtons.push(btn);
 		}
+		this.strengthSelect = actions.createEl('select', { cls: 'ex-strength-select' });
+		for (const [value, label] of Object.entries(STRENGTH_LABELS)) {
+			this.strengthSelect.createEl('option', { text: label }).value = value;
+		}
+		this.strengthSelect.addEventListener('change', () => {
+			this.plugin.settings.checkStrength = this.strengthSelect.value as CheckStrength;
+			void this.plugin.saveSettings();
+		});
 		this.runBtn = actions.createEl('button', { cls: 'ex-btn ex-btn-check', text: '检查' });
 		this.runBtn.addEventListener('click', () => void this.plugin.runCheck(this.checkScope));
 		this.cancelBtn = actions.createEl('button', { cls: 'ex-btn ex-btn-cancel', text: '取消' });
@@ -102,22 +138,72 @@ export class ExSidebarView extends ItemView {
 		this.scopeLabelEl = this.scopeBoxEl.createDiv({ cls: 'ex-scope-label' });
 		this.scopeTextEl = this.scopeBoxEl.createDiv({ cls: 'ex-scope-text' });
 
+		this.rewriteBoxEl = root.createDiv({ cls: 'ex-rewrite' });
+		const rewriteToolbar = this.rewriteBoxEl.createDiv({ cls: 'ex-rewrite-toolbar' });
+		rewriteToolbar.createSpan({ cls: 'ex-rewrite-title', text: '改写预览' });
+		const rewriteActions = rewriteToolbar.createDiv({ cls: 'ex-rewrite-actions' });
+		this.rewriteApplyBtn = rewriteActions.createEl('button', {
+			cls: 'ex-btn ex-btn-accept',
+			text: '应用改写',
+		});
+		this.rewriteApplyBtn.addEventListener('click', () => void this.plugin.rewriter.applyPreview());
+		const rewriteDiscard = rewriteActions.createEl('button', { cls: 'ex-btn', text: '放弃' });
+		rewriteDiscard.addEventListener('click', () => {
+			const ctx = this.plugin.resolver.resolve();
+			if (ctx) this.plugin.rewriter.discardPreview(ctx.file.path);
+		});
+		this.rewriteInstructionEl = this.rewriteBoxEl.createDiv({ cls: 'ex-hint' });
+		this.rewriteBodyEl = this.rewriteBoxEl.createDiv({ cls: 'ex-rewrite-body' });
+
 		this.emptyEl = root.createDiv({
 			cls: 'ex-empty',
-			text: '打开一篇文档，选好范围（段落/选中/全文），点「检查」',
+			text: '打开一篇文档，选好范围与强度，点「检查」',
 		});
 		this.listEl = root.createDiv({ cls: 'ex-list' });
+
 		this.footerEl = root.createDiv({ cls: 'ex-footer' });
-		this.ignoreAllBtn = this.footerEl.createEl('button', {
-			cls: 'ex-btn',
-			text: '忽略全部',
-		});
+		this.acceptAllBtn = this.footerEl.createEl('button', { cls: 'ex-btn ex-btn-accept', text: '接受全部' });
+		this.acceptAllBtn.addEventListener('click', () => void this.plugin.suggestions.acceptAll());
+		this.ignoreAllBtn = this.footerEl.createEl('button', { cls: 'ex-btn', text: '忽略全部' });
 		this.ignoreAllBtn.addEventListener('click', () => this.plugin.suggestions.ignoreAll());
+
+		// 指令输入：常驻收起为单行，聚焦/有内容时展开运行按钮
+		const bottom = root.createDiv({ cls: 'ex-bottom' });
+		this.composerInput = bottom.createEl('textarea', { cls: 'ex-composer-input' });
+		this.composerInput.placeholder = '输入改写要求，改写选中或当前段落…';
+		this.composerInput.rows = 1;
+		this.composerInput.addEventListener('input', () => {
+			this.instructionText = this.composerInput.value;
+			this.autoGrowComposer();
+			bottom.classList.toggle('ex-open', !!this.instructionText.trim());
+		});
+		this.composerInput.addEventListener('focus', () => bottom.addClass('ex-open'));
+		this.composerInput.addEventListener('blur', () => {
+			if (!this.instructionText.trim()) bottom.removeClass('ex-open');
+		});
+		const composerFoot = bottom.createDiv({ cls: 'ex-composer-foot' });
+		this.composerRunBtn = composerFoot.createEl('button', { cls: 'ex-btn ex-btn-run', text: '运行' });
+		this.composerRunBtn.addEventListener('click', () => {
+			if (!this.instructionText.trim()) {
+				return;
+			}
+			void this.plugin.rewriter.run(this.instructionText);
+		});
+
+		// 快照折叠区：展开时才异步加载列表
+		this.backupsDetails = root.createEl('details', { cls: 'ex-backups' });
+		this.backupsDetails.createEl('summary', { text: '快照与恢复' });
+		this.backupsDetails.addEventListener('toggle', () => {
+			if (this.backupsDetails.open) void this.fillBackups();
+		});
+		this.backupListEl = this.backupsDetails.createDiv({ cls: 'ex-backup-list' });
+
 		this.statsEl = root.createDiv({ cls: 'ex-stats', text: '' });
 
 		this.unsubscribers.push(
 			this.plugin.suggestions.subscribe(() => this.sync()),
 			this.plugin.checker.subscribe(() => this.sync()),
+			this.plugin.rewriter.subscribe(() => this.sync()),
 			this.plugin.resolver.subscribe(() => this.sync()),
 		);
 		this.sync();
@@ -129,10 +215,58 @@ export class ExSidebarView extends ItemView {
 		this.cards.clear();
 	}
 
+	private autoGrowComposer(): void {
+		this.composerInput.setCssStyles({ height: 'auto' });
+		this.composerInput.setCssStyles({ height: `${Math.min(this.composerInput.scrollHeight, 140)}px` });
+	}
+
+	/** 快照列表（仅在用户展开/手动刷新时重建此折叠区内容） */
+	private async fillBackups(): Promise<void> {
+		const listEl = this.backupListEl;
+		listEl.empty();
+		const ctx = this.plugin.resolver.resolve();
+		if (!ctx) {
+			listEl.createDiv({ cls: 'ex-hint', text: '打开文档后可查看该篇的快照' });
+			return;
+		}
+		const manual = listEl.createEl('button', { cls: 'ex-btn', text: '立即备份当前内容' });
+		manual.addEventListener('click', () => void this.backupAndRefresh());
+		let backups: BackupInfo[] = [];
+		try {
+			backups = await listBackups(this.plugin.app, this.plugin.settings.backupDir, ctx.file);
+		} catch {
+			backups = [];
+		}
+		if (!backups.length) {
+			listEl.createDiv({ cls: 'ex-hint', text: '暂无快照。批量接受与改写应用前会自动备份。' });
+			return;
+		}
+		for (const bp of backups) {
+			const row = listEl.createDiv({ cls: 'ex-backup-row' });
+			row.createSpan({
+				cls: 'ex-backup-time',
+				text: `${formatClock(bp.mtime)} · ${BACKUP_REASON_LABELS[bp.reason] ?? '快照'}`,
+			});
+			const restore = row.createEl('button', { cls: 'ex-btn', text: '恢复' });
+			restore.addEventListener('click', () => void this.restoreAndRefresh(bp.path));
+		}
+	}
+
+	private async backupAndRefresh(): Promise<void> {
+		await this.plugin.backupActiveFile();
+		await this.fillBackups();
+	}
+
+	private async restoreAndRefresh(backupPath: string): Promise<void> {
+		await this.plugin.restoreBackup(backupPath);
+		await this.fillBackups();
+	}
+
 	/** 精确同步可见卡片：按 id 增删、按状态原地更新、按位置重排序 */
 	private sync(): void {
 		if (!this.listEl) return;
 		const ctx = this.plugin.resolver.resolve();
+		const activePath = ctx?.file.path;
 		const entries = (ctx ? this.plugin.suggestions.entries(ctx.file.path) : []).filter(
 			(e) => e.suggestion.status === 'pending' || e.suggestion.status === 'stale',
 		);
@@ -174,7 +308,6 @@ export class ExSidebarView extends ItemView {
 		}
 
 		// 3. 头部操作区：空闲 = 选择 + 检查；运行 = 取消（全部按当前文件的状态）
-		const activePath = ctx?.file.path;
 		const running = activePath !== undefined && this.plugin.checker.isRunning(activePath);
 		const progress = activePath ? this.plugin.checker.getProgress(activePath) : null;
 		const pending = entries.filter((e) => e.suggestion.status === 'pending').length;
@@ -189,6 +322,7 @@ export class ExSidebarView extends ItemView {
 			this.subtitleEl.textContent = pending > 0 ? `待处理 ${pending} 条` : '';
 		}
 		this.segWrapEl.style.display = running ? 'none' : '';
+		this.strengthSelect.style.display = running ? 'none' : '';
 		this.runBtn.style.display = running ? 'none' : '';
 		this.cancelBtn.style.display = running ? '' : 'none';
 		for (const [i, btn] of this.segButtons.entries()) {
@@ -199,26 +333,72 @@ export class ExSidebarView extends ItemView {
 					(i === 2 && this.checkScope === 'full'),
 			);
 		}
+		if (this.strengthSelect.value !== this.plugin.settings.checkStrength) {
+			this.strengthSelect.value = this.plugin.settings.checkStrength;
+		}
 
 		// 4. 范围预览：只在「还没有结果」时显示；有结果就收起来（结果界面保持干净）
 		const preview = running || entries.length > 0 ? null : this.plugin.checker.previewScope(this.checkScope);
 		const showScope = !!preview && preview.chars > 0;
-		this.scopeBoxEl.classList.toggle('ex-hidden', !showScope);
-		if (showScope && preview) {
+		this.scopeBoxEl.classList.toggle('ex-hidden', !showScope && !(preview && preview.chars === 0));
+		if (preview && preview.chars > 0) {
 			this.scopeLabelEl.textContent = `将检查：${preview.label} · ${preview.chars} 字`;
 			this.scopeTextEl.textContent = truncate(preview.text.trim(), SCOPE_PREVIEW_CHARS);
 		} else if (preview && preview.chars === 0) {
 			// 选中范围但没选内容：给出提示，不替用户做决定
-			this.scopeBoxEl.classList.remove('ex-hidden');
 			this.scopeLabelEl.textContent = preview.label;
 			this.scopeTextEl.textContent = preview.text;
 		}
 
-		// 5. 空态、底栏与过程信息（过程信息按当前文件读取，切文件即切状态）
+		this.syncRewritePanel(activePath);
+
+		// 5. 空态、底栏、指令输入与过程信息（全部按当前文件读取，切文件即切状态）
 		this.emptyEl.style.display = entries.length ? 'none' : '';
 		this.footerEl.classList.toggle('ex-hidden', entries.length === 0);
+		this.acceptAllBtn.textContent = `接受全部（${pending}）`;
 		this.ignoreAllBtn.textContent = `忽略全部（${entries.length}）`;
+		const rewriting = activePath !== undefined && this.plugin.rewriter.isRunning(activePath);
+		this.composerRunBtn.disabled = rewriting;
+		this.composerRunBtn.textContent = rewriting ? '改写中…' : '运行';
 		this.statsEl.textContent = this.statsText(activePath);
+	}
+
+	/** 改写预览面板：流式时显示纯文本增量，完成后一次性渲染 diff */
+	private syncRewritePanel(activePath: string | undefined): void {
+		const preview = activePath ? this.plugin.rewriter.getPreview(activePath) : null;
+		this.rewriteBoxEl.classList.toggle('ex-hidden', !preview);
+		if (!preview) {
+			this.lastPreviewKey = '';
+			return;
+		}
+		this.rewriteInstructionEl.textContent = `指令：${preview.instruction}`;
+		this.rewriteApplyBtn.disabled = preview.streaming;
+		if (preview.streaming) {
+			this.rewriteBodyEl.textContent = preview.rewritten ? preview.rewritten + '…' : '等待模型输出…';
+			this.lastPreviewKey = ''; // 完成后需要重建 diff
+		} else if (this.lastPreviewKey !== `${preview.startedAt}`) {
+			this.renderRewriteDiff(preview);
+			this.lastPreviewKey = `${preview.startedAt}`;
+		}
+	}
+
+	private renderRewriteDiff(preview: RewritePreview): void {
+		const body = this.rewriteBodyEl;
+		body.empty();
+		const blocks = diffTexts(preview.original, preview.rewritten).slice(0, MAX_DIFF_BLOCKS);
+		for (const block of blocks) {
+			const el = body.createDiv({ cls: block.kind === 'same' ? 'ex-rw-same' : 'ex-rw-change' });
+			for (const seg of block.segments) {
+				if (seg.type === 'equal') {
+					el.appendChild(document.createTextNode(seg.text));
+				} else {
+					el.createSpan({
+						cls: seg.type === 'del' ? 'ex-diff-del' : 'ex-diff-ins',
+						text: seg.text,
+					});
+				}
+			}
+		}
 	}
 
 	/** 进场：高度从 0 展开 + 淡入，后续卡片平滑下移 */

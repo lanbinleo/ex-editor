@@ -44,7 +44,10 @@ export const DEFAULT_SETTINGS: ExSettings = {
 	apiKey: '',
 	model: PRESETS.deepseek?.model ?? '',
 	thinkingLevel: 'auto',
+	checkStrength: 'standard',
 	pricing: {},
+	backupDir: '.exeditor/backups',
+	backupKeep: 20,
 };
 
 export class ExSettingTab extends PluginSettingTab {
@@ -209,5 +212,34 @@ export class ExSettingTab extends PluginSettingTab {
 				}
 			});
 		});
+		new Setting(containerEl).setName('备份').setHeading();
+
+		new Setting(containerEl)
+			.setName('备份目录')
+			.setDesc('vault 内路径；快照目录镜像笔记的目录结构，避免同名笔记冲突')
+			.addText((text) =>
+				text
+					.setPlaceholder('.exeditor/backups')
+					.setValue(s.backupDir)
+					.onChange(async (value) => {
+						s.backupDir = value.trim() || '.exeditor/backups';
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('每篇保留份数')
+			.setDesc('超出后自动删除最旧的快照')
+			.addText((text) =>
+				text
+					.setValue(String(s.backupKeep))
+					.onChange(async (value) => {
+						const n = parseInt(value, 10);
+						if (Number.isFinite(n) && n > 0) {
+							s.backupKeep = n;
+							await this.plugin.saveSettings();
+						}
+					}),
+			);
 	}
 }
