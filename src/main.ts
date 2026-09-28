@@ -41,7 +41,7 @@ export default class ExEditorPlugin extends Plugin {
 		});
 		this.addCommand({
 			id: 'check-selection',
-			name: '检查选中文字（无选区时检查本段落）',
+			name: '检查选中文字',
 			callback: () => void this.runCheck('selection'),
 		});
 		this.addCommand({
@@ -51,8 +51,8 @@ export default class ExEditorPlugin extends Plugin {
 		});
 		this.addCommand({
 			id: 'cancel-check',
-			name: '取消进行中的检查',
-			callback: () => this.checker.cancel(),
+			name: '取消所有进行中的检查',
+			callback: () => this.checker.cancelAll(),
 		});
 		this.addCommand({
 			id: 'smoke-test',
@@ -68,9 +68,11 @@ export default class ExEditorPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => this.resolver.noteFile(file)),
 		);
-		// 选区/文档变化 → 侧边栏范围预览实时刷新（节流在 resolver 内）
+		// 选区/文档变化 → 侧边栏范围预览实时刷新（节流在 resolver 内）；
+		// 文档被编辑 → 防抖重校验建议，原文找不到的灰显（stale）
 		this.registerEditorExtension(
 			EditorView.updateListener.of((update) => {
+				if (update.docChanged) this.suggestions.scheduleRevalidate();
 				if (update.selectionSet || update.docChanged) this.resolver.noteEditorActivity();
 			}),
 		);

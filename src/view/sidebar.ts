@@ -45,6 +45,8 @@ export class ExSidebarView extends ItemView {
 	private scopeTextEl!: HTMLElement;
 	private emptyEl!: HTMLElement;
 	private listEl!: HTMLElement;
+	private footerEl!: HTMLElement;
+	private ignoreAllBtn!: HTMLButtonElement;
 	private statsEl!: HTMLElement;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: ExEditorPlugin) {
@@ -94,7 +96,7 @@ export class ExSidebarView extends ItemView {
 		this.runBtn = actions.createEl('button', { cls: 'ex-btn ex-btn-check', text: '检查' });
 		this.runBtn.addEventListener('click', () => void this.plugin.runCheck(this.checkScope));
 		this.cancelBtn = actions.createEl('button', { cls: 'ex-btn ex-btn-cancel', text: '取消' });
-		this.cancelBtn.addEventListener('click', () => this.plugin.checker.cancel());
+		this.cancelBtn.addEventListener('click', () => this.plugin.checker.cancelActive());
 
 		this.scopeBoxEl = root.createDiv({ cls: 'ex-scope' });
 		this.scopeLabelEl = this.scopeBoxEl.createDiv({ cls: 'ex-scope-label' });
@@ -105,6 +107,12 @@ export class ExSidebarView extends ItemView {
 			text: '打开一篇文档，选好范围（段落/选中/全文），点「检查」',
 		});
 		this.listEl = root.createDiv({ cls: 'ex-list' });
+		this.footerEl = root.createDiv({ cls: 'ex-footer' });
+		this.ignoreAllBtn = this.footerEl.createEl('button', {
+			cls: 'ex-btn',
+			text: '忽略全部',
+		});
+		this.ignoreAllBtn.addEventListener('click', () => this.plugin.suggestions.ignoreAll());
 		this.statsEl = root.createDiv({ cls: 'ex-stats', text: '' });
 
 		this.unsubscribers.push(
@@ -165,9 +173,10 @@ export class ExSidebarView extends ItemView {
 			}
 		}
 
-		// 3. 头部操作区：空闲 = 选择 + 检查；运行 = 取消
-		const running = this.plugin.checker.isRunning();
-		const progress = this.plugin.checker.getProgress();
+		// 3. 头部操作区：空闲 = 选择 + 检查；运行 = 取消（全部按当前文件的状态）
+		const activePath = ctx?.file.path;
+		const running = activePath !== undefined && this.plugin.checker.isRunning(activePath);
+		const progress = activePath ? this.plugin.checker.getProgress(activePath) : null;
 		const pending = entries.filter((e) => e.suggestion.status === 'pending').length;
 		if (progress) {
 			const scopeLabel =
@@ -191,18 +200,25 @@ export class ExSidebarView extends ItemView {
 			);
 		}
 
-		// 4. 范围预览：显示「现在点检查会查什么」，随选区/文档实时变化
-		const preview = running ? null : this.plugin.checker.previewScope(this.checkScope);
-		const showScope = !!preview && !!preview.text.trim();
+		// 4. 范围预览：只在「还没有结果」时显示；有结果就收起来（结果界面保持干净）
+		const preview = running || entries.length > 0 ? null : this.plugin.checker.previewScope(this.checkScope);
+		const showScope = !!preview && preview.chars > 0;
 		this.scopeBoxEl.classList.toggle('ex-hidden', !showScope);
 		if (showScope && preview) {
 			this.scopeLabelEl.textContent = `将检查：${preview.label} · ${preview.chars} 字`;
 			this.scopeTextEl.textContent = truncate(preview.text.trim(), SCOPE_PREVIEW_CHARS);
+		} else if (preview && preview.chars === 0) {
+			// 选中范围但没选内容：给出提示，不替用户做决定
+			this.scopeBoxEl.classList.remove('ex-hidden');
+			this.scopeLabelEl.textContent = preview.label;
+			this.scopeTextEl.textContent = preview.text;
 		}
 
-		// 5. 空态与过程信息
+		// 5. 空态、底栏与过程信息（过程信息按当前文件读取，切文件即切状态）
 		this.emptyEl.style.display = entries.length ? 'none' : '';
-		this.statsEl.textContent = this.statsText();
+		this.footerEl.classList.toggle('ex-hidden', entries.length === 0);
+		this.ignoreAllBtn.textContent = `忽略全部（${entries.length}）`;
+		this.statsEl.textContent = this.statsText(activePath);
 	}
 
 	/** 进场：高度从 0 展开 + 淡入，后续卡片平滑下移 */
@@ -228,9 +244,10 @@ export class ExSidebarView extends ItemView {
 		window.setTimeout(() => el.remove(), LEAVE_MS);
 	}
 
-	/** 过程信息行：检查中显示进度，完成后常驻最近一次用量与费用 */
-	private statsText(): string {
-		const p = this.plugin.checker.getProgress();
+	/** 过程信息行：检查中显示进度，完成后常驻最近一次用量与费用（按文件） */
+	private statsText(activePath?: string): string {
+		if (activePath === undefined) return '';
+		const p = this.plugin.checker.getProgress(activePath);
 		if (p) {
 			let text = p.batchTotal > 1 ? `全文 ${p.batchIndex}/${p.batchTotal} 批` : '请求中';
 			if (p.phase === 'thinking') {
@@ -240,7 +257,7 @@ export class ExSidebarView extends ItemView {
 			}
 			return text;
 		}
-		const s = this.plugin.checker.getLastSummary();
+		const s = this.plugin.checker.getLastSummary(activePath);
 		if (!s || (s.promptTokens === 0 && s.completionTokens === 0 && !s.reasoningTokens)) return '';
 		const parts: string[] = [];
 		if (typeof s.reasoningTokens === 'number' && s.reasoningTokens > 0) {

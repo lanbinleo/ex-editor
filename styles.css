@@ -45,6 +45,8 @@ body.theme-dark {
 	/* 面板正文可选中复制；控件关闭选中 */
 	user-select: text;
 	-webkit-user-select: text;
+	/* 作为容器查询的容器：窄面板时收起标题等次要信息 */
+	container-type: inline-size;
 }
 
 .ex-root button {
@@ -346,6 +348,25 @@ body.theme-dark {
 	display: flex;
 	gap: 4px;
 	margin-top: 6px;
+}
+
+/* ---------------- 底部操作条 ---------------- */
+.ex-footer {
+	display: flex;
+	justify-content: center;
+	padding: 8px var(--ex-gutter) 0;
+}
+
+/* ---------------- 窄面板：只留 Logo 与操作 ---------------- */
+@container (max-width: 280px) {
+	.ex-brand,
+	.ex-subtitle {
+		display: none;
+	}
+
+	.ex-identity {
+		flex: 0 0 auto;
+	}
 }
 
 /* ---------------- 过程信息行 ---------------- */

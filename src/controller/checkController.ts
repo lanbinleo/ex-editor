@@ -41,69 +41,59 @@ export interface RunSummary {
 	costYuan?: number;
 }
 
-/** 检查编排：一次只跑一个；进度与用量经 subscribe 推给界面 */
+/** 一个文件的进行中检查 */
+interface FileRun {
+	abort: AbortController;
+	progress: RunProgress;
+}
+
+/**
+ * 检查编排。状态按文件路径隔离：不同文件可并行检查互不干扰，
+ * 侧边栏只展示当前活动文件自己的进度与结果。
+ */
 export class CheckController {
-	private running = false;
 	private listeners = new Set<() => void>();
-	private abort: AbortController | null = null;
-	private progress: RunProgress | null = null;
-	private lastSummary: RunSummary | null = null;
+	private runs = new Map<string, FileRun>();
+	private summaries = new Map<string, RunSummary>();
 	private lastEmit = 0;
-	/** 本次会话累计估算费用（元），插件加载起算 */
+	/** 本次会话累计估算费用（元，跨文件），插件加载起算 */
 	private sessionCostYuan = 0;
 
 	constructor(private plugin: ExEditorPlugin) {}
 
-	isRunning(): boolean {
-		return this.running;
+	/** 是否有检查进行中（可限定某文件） */
+	isRunning(path?: string): boolean {
+		return path === undefined ? this.runs.size > 0 : this.runs.has(path);
 	}
 
-	getProgress(): RunProgress | null {
-		return this.progress;
+	getProgress(path: string): RunProgress | null {
+		return this.runs.get(path)?.progress ?? null;
 	}
 
-	getLastSummary(): RunSummary | null {
-		return this.lastSummary;
+	getLastSummary(path: string): RunSummary | null {
+		return this.summaries.get(path) ?? null;
 	}
 
 	getSessionCostYuan(): number {
 		return this.sessionCostYuan;
 	}
 
-	/** 用户取消进行中的检查 */
-	cancel(): void {
-		if (this.running && this.abort) {
-			this.abort.abort();
+	/** 取消当前活动文件的检查（侧边栏取消按钮） */
+	cancelActive(): void {
+		const ctx = this.plugin.resolver.resolve();
+		if (!ctx) return;
+		const run = this.runs.get(ctx.file.path);
+		if (run) {
+			run.abort.abort();
 			new Notice('正在取消…');
 		}
 	}
 
-	/** 计算某个范围「现在」会检查的内容（供侧边栏预览确认；无文档返回 null） */
-	previewScope(scope: CheckScope): { label: string; chars: number; text: string } | null {
-		const ctx = this.plugin.resolver.resolve();
-		if (!ctx) return null;
-		const state = ctx.view.state;
-		let label: string;
-		let text: string;
-		if (scope === 'full') {
-			label = '全文';
-			text = state.doc.toString();
-		} else if (scope === 'selection') {
-			const sel = state.selection.main;
-			if (sel.empty) {
-				const range = paragraphRange(state);
-				text = state.doc.sliceString(range.from, range.to);
-				label = '段落（当前无选区，将检查光标所在段落）';
-			} else {
-				text = state.doc.sliceString(sel.from, sel.to);
-				label = '选中';
-			}
-		} else {
-			const range = paragraphRange(state);
-			text = state.doc.sliceString(range.from, range.to);
-			label = '段落';
-		}
-		return { label, chars: text.length, text };
+	/** 取消全部进行中的检查（命令面板） */
+	cancelAll(): void {
+		if (!this.runs.size) return;
+		for (const run of this.runs.values()) run.abort.abort();
+		new Notice(`正在取消 ${this.runs.size} 个进行中的检查…`);
 	}
 
 	subscribe(fn: () => void): () => void {
@@ -118,12 +108,30 @@ export class CheckController {
 		for (const fn of this.listeners) fn();
 	}
 
+	/** 计算某个范围「现在」会检查的内容（供侧边栏预览；无文档返回 null） */
+	previewScope(scope: CheckScope): { label: string; chars: number; text: string } | null {
+		const ctx = this.plugin.resolver.resolve();
+		if (!ctx) return null;
+		const state = ctx.view.state;
+		if (scope === 'full') {
+			const text = state.doc.toString();
+			return { label: '全文', chars: text.length, text };
+		}
+		if (scope === 'selection') {
+			const sel = state.selection.main;
+			if (sel.empty) {
+				return { label: '待选中', chars: 0, text: '请先在编辑器中选中要检查的文字' };
+			}
+			const text = state.doc.sliceString(sel.from, sel.to);
+			return { label: '选中', chars: text.length, text };
+		}
+		const range = paragraphRange(state);
+		const text = state.doc.sliceString(range.from, range.to);
+		return { label: '段落', chars: text.length, text };
+	}
+
 	/** 运行检查，返回定位成功的建议条数（供调用方决定是否打开侧边栏） */
 	async run(scope: CheckScope): Promise<number> {
-		if (this.running) {
-			new Notice('已有检查正在进行，请稍候或先取消');
-			return 0;
-		}
 		const ctx = this.plugin.resolver.resolve();
 		if (!ctx) {
 			new Notice('请先打开一篇 Markdown 文档');
@@ -132,6 +140,11 @@ export class CheckController {
 		const { baseURL, apiKey, model } = this.plugin.settings;
 		if (!baseURL || !apiKey || !model) {
 			new Notice('请先在设置中配置 API 地址、密钥与模型');
+			return 0;
+		}
+		const path = ctx.file.path;
+		if (this.runs.has(path)) {
+			new Notice('这篇文档已有检查正在进行');
 			return 0;
 		}
 		const state = ctx.view.state;
@@ -151,49 +164,37 @@ export class CheckController {
 				return 0;
 			}
 			scopeLabel = '全文';
-		} else {
-			let from: number;
-			let to: number;
-			if (scope === 'selection') {
-				const sel = state.selection.main;
-				if (sel.empty) {
-					// 无选区回落段落
-					const range = paragraphRange(state);
-					if (range.to - range.from < 10) {
-						new Notice('光标所在段落太短，不值得单独检查');
-						return 0;
-					}
-					from = range.from;
-					to = range.to;
-				} else {
-					from = sel.from;
-					to = sel.to;
-				}
-				scopeLabel = sel.empty ? '段落' : '选区';
-			} else {
-				const range = paragraphRange(state);
-				if (range.to - range.from < 10) {
-					new Notice('光标所在段落太短，不值得单独检查');
-					return 0;
-				}
-				from = range.from;
-				to = range.to;
-				scopeLabel = '段落';
+		} else if (scope === 'selection') {
+			const sel = state.selection.main;
+			if (sel.empty) {
+				new Notice('请先选中要检查的文字');
+				return 0;
 			}
-			batches = [{ from, to }];
+			batches = [{ from: sel.from, to: sel.to }];
+			scopeLabel = '选区';
+		} else {
+			const range = paragraphRange(state);
+			if (range.to - range.from < 10) {
+				new Notice('光标所在段落太短，不值得单独检查');
+				return 0;
+			}
+			batches = [{ from: range.from, to: range.to }];
+			scopeLabel = '段落';
 		}
 
-		this.running = true;
-		this.abort = new AbortController();
-		this.progress = {
-			scope,
-			running: true,
-			batchIndex: 0,
-			batchTotal: batches.length,
-			phase: 'thinking',
-			reasoningChars: 0,
-			suggestionsSoFar: 0,
+		const run: FileRun = {
+			abort: new AbortController(),
+			progress: {
+				scope,
+				running: true,
+				batchIndex: 0,
+				batchTotal: batches.length,
+				phase: 'thinking',
+				reasoningChars: 0,
+				suggestionsSoFar: 0,
+			},
 		};
+		this.runs.set(path, run);
 		this.emit();
 
 		const summary: RunSummary = {
@@ -215,16 +216,14 @@ export class CheckController {
 			for (let i = 0; i < batches.length; i++) {
 				const batch = batches[i];
 				if (!batch) continue;
-				if (this.abort.signal.aborted) break;
+				if (run.abort.signal.aborted) break;
 				// 用户在批间修改了文档：范围已不可信，中止而不是错位检查
 				if (i > 0 && ctx.view.state.doc.toString() !== docText) {
-					new Notice('文档已被修改，检查中止（已完成部分保留）', 6000);
+					new Notice('文档已被修改，检查中止（已收到的建议保留）', 6000);
 					break;
 				}
-				if (this.progress) {
-					this.progress.batchIndex = i + 1;
-					this.progress.phase = 'thinking';
-				}
+				run.progress.batchIndex = i + 1;
+				run.progress.phase = 'thinking';
 				this.emit();
 
 				const result = await chatCompletionStream(
@@ -235,19 +234,18 @@ export class CheckController {
 					],
 					{
 						jsonMode: true,
-						signal: this.abort.signal,
+						signal: run.abort.signal,
 						onReasoningDelta: (_d, charsSoFar) => {
-							if (!this.progress) return;
-							if (this.progress.phase !== 'thinking') {
-								this.progress.phase = 'thinking';
+							if (run.progress.phase !== 'thinking') {
+								run.progress.phase = 'thinking';
 								this.emit();
 							}
-							this.progress.reasoningChars = charsSoFar;
+							run.progress.reasoningChars = charsSoFar;
 							this.emit(120);
 						},
 						onContentDelta: () => {
-							if (this.progress && this.progress.phase !== 'answering') {
-								this.progress.phase = 'answering';
+							if (run.progress.phase !== 'answering') {
+								run.progress.phase = 'answering';
 								this.emit();
 							}
 						},
@@ -269,27 +267,15 @@ export class CheckController {
 
 				const issues = parseIssues(result.content);
 				const protectedRanges = findProtectedRanges(docText);
-				const outcome = validateAndLocate(
-					issues,
-					docText,
-					batch.from,
-					batch.to,
-					protectedRanges,
-					scope === 'full' ? 'full' : scope,
-				);
-				this.plugin.suggestions.commitCheckResult(
-					ctx.file.path,
-					batch.from,
-					batch.to,
-					outcome.accepted,
-				);
+				const outcome = validateAndLocate(issues, docText, batch.from, batch.to, protectedRanges, scope);
+				this.plugin.suggestions.appendLocated(path, outcome.accepted);
 				summary.accepted += outcome.accepted.length;
 				summary.dropped += outcome.droppedCount;
-				if (this.progress) this.progress.suggestionsSoFar = summary.accepted;
+				run.progress.suggestionsSoFar = summary.accepted;
 				this.emit();
 			}
 		} catch (err) {
-			if (this.abort.signal.aborted || (err instanceof Error && err.message === '已取消')) {
+			if (run.abort.signal.aborted || (err instanceof Error && err.message === '已取消')) {
 				cancelled = true;
 			} else {
 				new Notice(`检查失败 — ${err instanceof Error ? err.message : String(err)}`, 8000);
@@ -297,10 +283,8 @@ export class CheckController {
 		} finally {
 			summary.durationMs = Date.now() - started;
 			if (runCostYuan > 0) summary.costYuan = runCostYuan;
-			this.running = false;
-			this.abort = null;
-			this.progress = null;
-			this.lastSummary = summary;
+			this.runs.delete(path);
+			this.summaries.set(path, summary);
 			this.emit();
 		}
 
@@ -309,7 +293,7 @@ export class CheckController {
 		} else {
 			const batchNote = batches.length > 1 ? `，${batches.length} 批` : '';
 			new Notice(
-				`${scopeLabel}检查完成${batchNote}，${summary.accepted} 条建议` +
+				`${scopeLabel}检查完成${batchNote}，新收 ${summary.accepted} 条建议` +
 					(summary.dropped ? `，${summary.dropped} 条无法定位已丢弃` : ''),
 			);
 		}

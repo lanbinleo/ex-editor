@@ -2,17 +2,20 @@ import { Notice } from 'obsidian';
 import type { EditorContextResolver } from '../editorContext';
 import type { LocatedSuggestion } from '../core/validate';
 import { uniqueOccurrence } from '../core/validate';
+import { appendLocated as mergeEntries } from '../core/append';
 import { findProtectedRanges } from '../core/protected';
 import type { SuggestionEntry, SuggestionStatus } from '../types';
 
 /**
- * 建议管理（M1 为内存态，按文件路径分组，重启后清空——重新检查即可恢复）。
+ * 建议管理（内存态，按文件路径分组，重启后清空——重新检查即可恢复）。
+ * 结果采用「追加」语义：旧建议不删除，原文已被改掉的由重定位校验标 stale 灰显。
  * 安全协议：接受/定位前必须重新验证原文（先按检查时位置精确匹配，
  * 失败再全文唯一出现定位；两者都失败标记 stale，绝不猜位置）。
  */
 export class SuggestionController {
 	private files = new Map<string, SuggestionEntry[]>();
 	private listeners = new Set<() => void>();
+	private revalidateTimer: number | undefined;
 
 	constructor(private resolver: EditorContextResolver) {}
 
@@ -33,21 +36,18 @@ export class SuggestionController {
 		return this.files.get(path)?.find((e) => e.suggestion.id === id);
 	}
 
-	/** 一次检查的结果落库：检查范围内旧建议被新结果替换 */
-	commitCheckResult(
-		path: string,
-		scopeFrom: number,
-		scopeTo: number,
-		located: LocatedSuggestion[],
-	): void {
+	/** 一次检查的结果入库：追加语义，按 original 去重，按位置排序 */
+	appendLocated(path: string, located: LocatedSuggestion[]): void {
 		const list = this.files.get(path) ?? [];
-		const kept = list.filter((e) => !(e.from >= scopeFrom && e.to <= scopeTo));
-		const added: SuggestionEntry[] = located.map((l) => ({
-			suggestion: l.suggestion,
-			from: l.from,
-			to: l.to,
-		}));
-		this.files.set(path, [...kept, ...added]);
+		this.files.set(path, mergeEntries(list, located));
+		this.emit();
+	}
+
+	/** 一键忽略：清空当前活动文件的全部建议（含已失效灰显的） */
+	ignoreAll(): void {
+		const ctx = this.resolver.resolve();
+		if (!ctx) return;
+		this.files.delete(ctx.file.path);
 		this.emit();
 	}
 
@@ -80,6 +80,28 @@ export class SuggestionController {
 			findProtectedRanges(docText),
 		);
 		return at === null ? null : { from: at, to: at + entry.suggestion.original.length };
+	}
+
+	/** 编辑停止后（防抖）重校验当前文档的建议：原文找不到的标 stale 灰显 */
+	scheduleRevalidate(): void {
+		if (this.revalidateTimer !== undefined) window.clearTimeout(this.revalidateTimer);
+		this.revalidateTimer = window.setTimeout(() => {
+			this.revalidateTimer = undefined;
+			const ctx = this.resolver.resolve();
+			if (!ctx) return;
+			const list = this.files.get(ctx.file.path);
+			if (!list?.length) return;
+			const docText = ctx.view.state.doc.toString();
+			let changed = false;
+			for (const entry of list) {
+				if (entry.suggestion.status !== 'pending') continue;
+				if (!this.relocate(entry, docText)) {
+					entry.suggestion.status = 'stale';
+					changed = true;
+				}
+			}
+			if (changed) this.emit();
+		}, 600);
 	}
 
 	/** 接受一条建议：单事务替换，Ctrl+Z 一次撤销 */
