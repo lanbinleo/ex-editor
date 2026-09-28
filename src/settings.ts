@@ -9,31 +9,31 @@ interface Preset {
 	name: string;
 	baseURL: string;
 	model: string;
-	reasoningMode: ExSettings['reasoningMode'];
+	thinkingLevel: ExSettings['thinkingLevel'];
 	hint?: string;
 }
 
-/** M2 提供商预设：DeepSeek / GLM / 自定义（Kimi/OpenAI/Ollama 等 M5 补全）。
+/** 提供商预设：DeepSeek / GLM / 自定义（Kimi/OpenAI/Ollama 等 M5 补全）。
  *  deepseek-chat/reasoner 已于 2026-07 停用，官方模型为 deepseek-flash / deepseek-v4-pro。 */
 export const PRESETS: Record<string, Preset> = {
 	deepseek: {
 		name: 'DeepSeek',
 		baseURL: 'https://api.deepseek.com/v1',
 		model: 'deepseek-flash',
-		reasoningMode: 'auto',
-		hint: '推理更强可改用 deepseek-v4-pro，或在下方开启思维链',
+		thinkingLevel: 'auto',
+		hint: '推理更强可改用 deepseek-v4-pro，或在下方调高思考深度',
 	},
 	glm: {
 		name: '智谱 GLM',
 		baseURL: 'https://open.bigmodel.cn/api/paas/v4',
 		model: 'glm-4.6',
-		reasoningMode: 'off',
+		thinkingLevel: 'off',
 	},
 	custom: {
 		name: '自定义（任意 OpenAI 兼容服务）',
 		baseURL: '',
 		model: '',
-		reasoningMode: 'auto',
+		thinkingLevel: 'auto',
 		hint: '填入服务商的 baseURL（通常以 /v1 结尾）与模型名',
 	},
 };
@@ -43,8 +43,7 @@ export const DEFAULT_SETTINGS: ExSettings = {
 	baseURL: PRESETS.deepseek?.baseURL ?? '',
 	apiKey: '',
 	model: PRESETS.deepseek?.model ?? '',
-	reasoningMode: 'auto',
-	reasoningEffort: 'medium',
+	thinkingLevel: 'auto',
 	pricing: {},
 };
 
@@ -73,7 +72,7 @@ export class ExSettingTab extends PluginSettingTab {
 				if (preset) {
 					s.baseURL = preset.baseURL;
 					s.model = preset.model;
-					s.reasoningMode = preset.reasoningMode;
+					s.thinkingLevel = preset.thinkingLevel;
 				}
 				await this.plugin.saveSettings();
 				this.display();
@@ -121,38 +120,27 @@ export class ExSettingTab extends PluginSettingTab {
 				}),
 		);
 
-		new Setting(containerEl).setName('思维链').setHeading();
+		new Setting(containerEl).setName('思考深度').setHeading();
 
 		new Setting(containerEl)
-			.setName('思考模式')
-			.setDesc('开启后模型先深度思考再作答，质量更高但更慢；思考过程与用量显示在侧边栏底部')
+			.setName('深度')
+			.setDesc(
+				'不同服务商支持的档位不同（DeepSeek/GLM：low/high/max；OpenAI：low/medium/high），不支持的档位可能报错，按预设选即可。思考过程与用量显示在侧边栏底部',
+			)
 			.addDropdown((drop) =>
 				drop
 					.addOption('auto', '跟随服务商默认（不发送参数）')
-					.addOption('on', '开启（thinking: enabled）')
 					.addOption('off', '关闭（thinking: disabled）')
-					.addOption('effort', '按力度（reasoning_effort）')
-					.setValue(s.reasoningMode)
+					.addOption('low', '浅（reasoning_effort: low）')
+					.addOption('medium', '中（reasoning_effort: medium）')
+					.addOption('high', '深（reasoning_effort: high）')
+					.addOption('max', '极致（reasoning_effort: max）')
+					.setValue(s.thinkingLevel)
 					.onChange(async (value) => {
-						s.reasoningMode = value as ExSettings['reasoningMode'];
-						await this.plugin.saveSettings();
-						this.display();
-					}),
-			);
-
-		if (s.reasoningMode === 'effort') {
-			new Setting(containerEl).setName('思考力度').addDropdown((drop) =>
-				drop
-					.addOption('low', '低')
-					.addOption('medium', '中')
-					.addOption('high', '高')
-					.setValue(s.reasoningEffort)
-					.onChange(async (value) => {
-						s.reasoningEffort = value as ExSettings['reasoningEffort'];
+						s.thinkingLevel = value as ExSettings['thinkingLevel'];
 						await this.plugin.saveSettings();
 					}),
 			);
-		}
 
 		new Setting(containerEl).setName('计费').setHeading();
 

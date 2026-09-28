@@ -52,8 +52,8 @@ export interface RawIssue {
   explanation?: unknown;
 }
 
-/** 思维链参数形态：auto 不发送（跟随服务商默认）/ on thinking enabled / off thinking disabled / effort reasoning_effort */
-export type ReasoningMode = 'auto' | 'on' | 'off' | 'effort';
+/** 思考深度：auto 不发参数（跟随服务商默认）/ off 显式关闭 / low·medium·high·max → reasoning_effort */
+export type ThinkingLevel = 'auto' | 'off' | 'low' | 'medium' | 'high' | 'max';
 
 /** 模型价格（人民币元 / 百万 tokens），用于费用估算 */
 export interface ModelPricing {
@@ -68,8 +68,7 @@ export interface ExSettings {
 	baseURL: string;
 	apiKey: string;
 	model: string;
-	reasoningMode: ReasoningMode;
-	reasoningEffort: 'low' | 'medium' | 'high';
+	thinkingLevel: ThinkingLevel;
 	/** 按模型名自定义价格（覆盖内置官方价）；键为模型名 */
 	pricing: Record<string, ModelPricing>;
 }

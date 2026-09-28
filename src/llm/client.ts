@@ -85,15 +85,15 @@ function buildBody(
 	};
 	if (stream) body.stream_options = { include_usage: true };
 	if (jsonMode) body.response_format = { type: 'json_object' };
-	switch (settings.reasoningMode) {
-		case 'on':
-			body.thinking = { type: 'enabled' };
-			break;
+	switch (settings.thinkingLevel) {
 		case 'off':
 			body.thinking = { type: 'disabled' };
 			break;
-		case 'effort':
-			body.reasoning_effort = settings.reasoningEffort;
+		case 'low':
+		case 'medium':
+		case 'high':
+		case 'max':
+			body.reasoning_effort = settings.thinkingLevel;
 			break;
 		default:
 			break; // auto：不发送，跟随服务商默认

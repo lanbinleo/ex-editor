@@ -97,7 +97,20 @@ export default class ExEditorPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		const stored = (await this.loadData()) as Partial<ExSettings> | null;
-		this.settings = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+		const merged: ExSettings = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+		// M2→M3 迁移：reasoningMode + reasoningEffort 合并为 thinkingLevel
+		const legacy = stored as unknown as { reasoningMode?: string; reasoningEffort?: string } | null;
+		if (legacy?.reasoningMode) {
+			if (legacy.reasoningMode === 'off') merged.thinkingLevel = 'off';
+			else if (legacy.reasoningMode === 'effort') {
+				const level = legacy.reasoningEffort;
+				merged.thinkingLevel =
+					level === 'low' || level === 'medium' || level === 'high' || level === 'max'
+						? level
+						: 'medium';
+			} else merged.thinkingLevel = 'auto';
+		}
+		this.settings = merged;
 	}
 
 	async saveSettings(): Promise<void> {

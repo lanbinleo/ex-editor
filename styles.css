@@ -357,8 +357,10 @@ body.theme-dark {
 	padding: 8px var(--ex-gutter) 0;
 }
 
-/* ---------------- 窄面板：只留 Logo 与操作 ---------------- */
-@container (max-width: 280px) {
+/* ---------------- 窄面板：只留 Logo 与操作 ----------------
+ * 阈值取「标题开始放不下」的位置（标题文字最小宽约 70px）：
+ * 宁可早点折叠标题，也不要出现省略号 */
+@container (max-width: 360px) {
 	.ex-brand,
 	.ex-subtitle {
 		display: none;
@@ -366,6 +368,10 @@ body.theme-dark {
 
 	.ex-identity {
 		flex: 0 0 auto;
+	}
+
+	.ex-seg-item {
+		padding: 2px 6px;
 	}
 }
 

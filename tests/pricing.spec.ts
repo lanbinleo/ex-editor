@@ -8,8 +8,7 @@ const base: ExSettings = {
 	baseURL: 'https://example.com/v1',
 	apiKey: 'sk-test',
 	model: 'deepseek-flash',
-	reasoningMode: 'auto',
-	reasoningEffort: 'medium',
+	thinkingLevel: 'auto',
 	pricing: {},
 };
 
