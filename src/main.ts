@@ -1,5 +1,6 @@
 import { Notice, Plugin } from 'obsidian';
 import type { Editor, Menu } from 'obsidian';
+import { EditorView } from '@codemirror/view';
 import { EditorContextResolver } from './editorContext';
 import { CheckController } from './controller/checkController';
 import type { CheckScope } from './controller/checkController';
@@ -66,6 +67,12 @@ export default class ExEditorPlugin extends Plugin {
 		);
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => this.resolver.noteFile(file)),
+		);
+		// 选区/文档变化 → 侧边栏范围预览实时刷新（节流在 resolver 内）
+		this.registerEditorExtension(
+			EditorView.updateListener.of((update) => {
+				if (update.selectionSet || update.docChanged) this.resolver.noteEditorActivity();
+			}),
 		);
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {

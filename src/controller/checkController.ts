@@ -69,6 +69,34 @@ export class CheckController {
 		}
 	}
 
+	/** 计算某个范围「现在」会检查的内容（供侧边栏预览确认；无文档返回 null） */
+	previewScope(scope: CheckScope): { label: string; chars: number; text: string } | null {
+		const ctx = this.plugin.resolver.resolve();
+		if (!ctx) return null;
+		const state = ctx.view.state;
+		let label: string;
+		let text: string;
+		if (scope === 'full') {
+			label = '全文';
+			text = state.doc.toString();
+		} else if (scope === 'selection') {
+			const sel = state.selection.main;
+			if (sel.empty) {
+				const range = paragraphRange(state);
+				text = state.doc.sliceString(range.from, range.to);
+				label = '段落（当前无选区，将检查光标所在段落）';
+			} else {
+				text = state.doc.sliceString(sel.from, sel.to);
+				label = '选中';
+			}
+		} else {
+			const range = paragraphRange(state);
+			text = state.doc.sliceString(range.from, range.to);
+			label = '段落';
+		}
+		return { label, chars: text.length, text };
+	}
+
 	subscribe(fn: () => void): () => void {
 		this.listeners.add(fn);
 		return () => this.listeners.delete(fn);

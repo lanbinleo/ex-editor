@@ -41,6 +41,17 @@ export class EditorContextResolver {
 		this.emit();
 	}
 
+	private activityTimer: number | undefined;
+
+	/** 编辑器选区/文档变化（updateListener 驱动）；节流后通知界面刷新范围预览等 */
+	noteEditorActivity(): void {
+		if (this.activityTimer !== undefined) return;
+		this.activityTimer = window.setTimeout(() => {
+			this.activityTimer = undefined;
+			this.emit();
+		}, 150);
+	}
+
 	resolve(): EditorContext | null {
 		const candidates: MarkdownView[] = [];
 		const active = this.app.workspace.getActiveViewOfType(MarkdownView);

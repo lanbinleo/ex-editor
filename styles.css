@@ -244,18 +244,6 @@ body.theme-dark {
 	border-bottom: 1px solid var(--background-modifier-border);
 	cursor: pointer;
 	transition: background-color 120ms ease, opacity 180ms ease;
-	animation: ex-card-in 160ms ease-out;
-}
-
-@keyframes ex-card-in {
-	from {
-		opacity: 0;
-		transform: translateY(4px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
 }
 
 .ex-card:hover {
@@ -266,16 +254,30 @@ body.theme-dark {
 	border-bottom: none;
 }
 
-/* 离场：淡出并轻微下沉，JS 在动画后移除节点 */
-.ex-card-leaving {
-	opacity: 0;
-	transform: translateY(3px);
-	pointer-events: none;
-	transition: opacity 180ms ease, transform 180ms ease;
+/* 进/离场动画态：内边距与底边一并收拢，高度由 JS 内联控制，
+   其余卡片因高度连续变化而平滑移动，而不是突然跳位 */
+.ex-card.ex-card-anim {
+	padding-top: 0;
+	padding-bottom: 0;
+	border-bottom-width: 0;
+	box-sizing: border-box;
+	transition: height 200ms ease, padding-top 200ms ease, padding-bottom 200ms ease,
+		border-bottom-width 200ms ease, opacity 180ms ease;
 }
 
 .ex-card-stale {
 	opacity: 0.55;
+	transition: opacity 240ms ease;
+}
+
+/* 尊重系统「减弱动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+	.ex-card,
+	.ex-card-anim,
+	.ex-stats {
+		animation: none !important;
+		transition: none !important;
+	}
 }
 
 .ex-card-meta {
@@ -364,6 +366,36 @@ body.theme-dark {
 	to {
 		opacity: 1;
 	}
+}
+
+/* ---------------- 通用显隐 ---------------- */
+.ex-hidden {
+	display: none;
+}
+
+/* ---------------- 范围预览 ---------------- */
+.ex-scope {
+	margin: 2px var(--ex-gutter) 0;
+	padding: 7px 10px;
+	border-radius: var(--es-radius);
+	background: var(--background-primary-alt);
+	border-left: 2px solid color-mix(in srgb, var(--ex-accent) 45%, transparent);
+}
+
+.ex-scope-label {
+	color: var(--text-muted);
+	font-size: var(--ex-font-meta);
+	margin-bottom: 2px;
+}
+
+.ex-scope-text {
+	color: var(--text-faint);
+	font-size: var(--ex-font-meta);
+	line-height: 1.6;
+	max-height: 5.2em;
+	overflow: hidden;
+	word-break: break-all;
+	white-space: pre-wrap;
 }
 
 /* ---------------- 空态 ---------------- */
