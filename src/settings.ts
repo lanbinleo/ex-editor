@@ -8,26 +8,31 @@ interface Preset {
 	name: string;
 	baseURL: string;
 	model: string;
+	reasoningMode: ExSettings['reasoningMode'];
 	hint?: string;
 }
 
-/** M1 提供商预设：DeepSeek / GLM / 自定义（Kimi/OpenAI/Ollama 等 M5 补全） */
+/** M2 提供商预设：DeepSeek / GLM / 自定义（Kimi/OpenAI/Ollama 等 M5 补全）。
+ *  deepseek-chat/reasoner 已于 2026-07 停用，官方模型为 deepseek-flash / deepseek-v4-pro。 */
 export const PRESETS: Record<string, Preset> = {
 	deepseek: {
 		name: 'DeepSeek',
 		baseURL: 'https://api.deepseek.com/v1',
-		model: 'deepseek-chat',
-		hint: '想要思维链深度分析可把模型改为 deepseek-reasoner',
+		model: 'deepseek-flash',
+		reasoningMode: 'auto',
+		hint: '推理更强可改用 deepseek-v4-pro，或在下方开启思维链',
 	},
 	glm: {
 		name: '智谱 GLM',
 		baseURL: 'https://open.bigmodel.cn/api/paas/v4',
 		model: 'glm-4.6',
+		reasoningMode: 'off',
 	},
 	custom: {
 		name: '自定义（任意 OpenAI 兼容服务）',
 		baseURL: '',
 		model: '',
+		reasoningMode: 'auto',
 		hint: '填入服务商的 baseURL（通常以 /v1 结尾）与模型名',
 	},
 };
@@ -37,6 +42,8 @@ export const DEFAULT_SETTINGS: ExSettings = {
 	baseURL: PRESETS.deepseek?.baseURL ?? '',
 	apiKey: '',
 	model: PRESETS.deepseek?.model ?? '',
+	reasoningMode: 'auto',
+	reasoningEffort: 'medium',
 };
 
 export class ExSettingTab extends PluginSettingTab {
@@ -58,16 +65,17 @@ export class ExSettingTab extends PluginSettingTab {
 				for (const [key, preset] of Object.entries(PRESETS)) {
 					drop.addOption(key, preset.name);
 				}
-				drop.setValue(s.preset).onChange(async (value) => {
-					s.preset = value;
-					const preset = PRESETS[value];
-					if (preset) {
-						s.baseURL = preset.baseURL;
-						s.model = preset.model;
-					}
-					await this.plugin.saveSettings();
-					this.display();
-				});
+			drop.setValue(s.preset).onChange(async (value) => {
+				s.preset = value;
+				const preset = PRESETS[value];
+				if (preset) {
+					s.baseURL = preset.baseURL;
+					s.model = preset.model;
+					s.reasoningMode = preset.reasoningMode;
+				}
+				await this.plugin.saveSettings();
+				this.display();
+			});
 			});
 		const preset = PRESETS[s.preset];
 		if (preset?.hint) {
@@ -103,13 +111,46 @@ export class ExSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName('模型名').addText((text) =>
 			text
-				.setPlaceholder('如 deepseek-chat')
+				.setPlaceholder('如 deepseek-flash')
 				.setValue(s.model)
 				.onChange(async (value) => {
 					s.model = value.trim();
 					await this.plugin.saveSettings();
 				}),
 		);
+
+		new Setting(containerEl).setName('思维链').setHeading();
+
+		new Setting(containerEl)
+			.setName('思考模式')
+			.setDesc('开启后模型先深度思考再作答，质量更高但更慢；思考过程与用量显示在侧边栏底部')
+			.addDropdown((drop) =>
+				drop
+					.addOption('auto', '跟随服务商默认（不发送参数）')
+					.addOption('on', '开启（thinking: enabled）')
+					.addOption('off', '关闭（thinking: disabled）')
+					.addOption('effort', '按力度（reasoning_effort）')
+					.setValue(s.reasoningMode)
+					.onChange(async (value) => {
+						s.reasoningMode = value as ExSettings['reasoningMode'];
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		if (s.reasoningMode === 'effort') {
+			new Setting(containerEl).setName('思考力度').addDropdown((drop) =>
+				drop
+					.addOption('low', '低')
+					.addOption('medium', '中')
+					.addOption('high', '高')
+					.setValue(s.reasoningEffort)
+					.onChange(async (value) => {
+						s.reasoningEffort = value as ExSettings['reasoningEffort'];
+						await this.plugin.saveSettings();
+					}),
+			);
+		}
 
 		new Setting(containerEl).setName('测试连接').addButton((button) => {
 			button.setButtonText('发送一条测试消息').onClick(async () => {

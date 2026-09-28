@@ -1,7 +1,7 @@
 {
 	"id": "exeditor",
 	"name": "ExEditor",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"minAppVersion": "1.7.2",
 	"description": "有经验的编辑——Obsidian 内的 AI 校对与改稿搭档：圈出问题、解释原因、给出改法，绝不弄丢你的稿子。",
 	"author": "huozi",

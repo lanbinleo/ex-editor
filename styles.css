@@ -93,6 +93,44 @@ body.theme-dark {
 	flex: 1;
 }
 
+.ex-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-shrink: 0;
+}
+
+/* 分段控件（检查范围） */
+.ex-seg {
+	display: inline-flex;
+	gap: 1px;
+	padding: 2px;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+}
+
+.ex-seg-item {
+	border: none;
+	border-radius: calc(var(--radius-s) - 1px);
+	padding: 2px 9px;
+	color: var(--text-muted);
+	transition: color 120ms ease, background-color 120ms ease;
+}
+
+.ex-seg-item:hover:not(.is-active):not(:disabled) {
+	color: var(--text-normal);
+}
+
+.ex-seg-item.is-active {
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+
+.ex-seg-item:disabled {
+	opacity: 0.38;
+	cursor: default;
+}
+
 .ex-brand-icon {
 	display: inline-flex;
 	align-items: center;
@@ -139,6 +177,8 @@ body.theme-dark {
 	padding: 3px 10px;
 	border-radius: var(--radius-s);
 	color: var(--text-muted);
+	transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease,
+		opacity 160ms ease;
 }
 
 .ex-btn:hover:not(:disabled) {
@@ -150,6 +190,17 @@ body.theme-dark {
 .ex-btn:disabled {
 	opacity: 0.38;
 	cursor: default;
+}
+
+/* 取消（运行态）：安静的红语义，悬停浮现 */
+.ex-btn-cancel {
+	color: var(--text-error, #d2405a);
+}
+
+.ex-btn-cancel:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--text-error, #d2405a) 40%, transparent);
+	background: color-mix(in srgb, var(--text-error, #d2405a) 10%, transparent);
+	color: var(--text-error, #d2405a);
 }
 
 /* 主要动作（检查 / 接受）：强调色文字的安静按钮，悬停浮现浅染 */
@@ -192,6 +243,19 @@ body.theme-dark {
 	padding: 10px var(--ex-gutter) 8px;
 	border-bottom: 1px solid var(--background-modifier-border);
 	cursor: pointer;
+	transition: background-color 120ms ease, opacity 180ms ease;
+	animation: ex-card-in 160ms ease-out;
+}
+
+@keyframes ex-card-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 .ex-card:hover {
@@ -200,6 +264,14 @@ body.theme-dark {
 
 .ex-card:last-child {
 	border-bottom: none;
+}
+
+/* 离场：淡出并轻微下沉，JS 在动画后移除节点 */
+.ex-card-leaving {
+	opacity: 0;
+	transform: translateY(3px);
+	pointer-events: none;
+	transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .ex-card-stale {
@@ -272,6 +344,26 @@ body.theme-dark {
 	display: flex;
 	gap: 4px;
 	margin-top: 6px;
+}
+
+/* ---------------- 过程信息行 ---------------- */
+.ex-stats {
+	min-height: 18px;
+	padding: 8px var(--ex-gutter) 10px;
+	color: var(--text-faint);
+	font-size: var(--ex-font-meta);
+	text-align: center;
+	line-height: 1.5;
+	animation: ex-stats-in 240ms ease-out;
+}
+
+@keyframes ex-stats-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
 }
 
 /* ---------------- 空态 ---------------- */

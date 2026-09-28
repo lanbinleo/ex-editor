@@ -1,9 +1,25 @@
 import { ItemView, setIcon } from 'obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
 import type ExEditorPlugin from '../main';
+import type { CheckScope } from '../controller/checkController';
 import { renderSuggestionCard, updateCardState } from './card';
 
 export const VIEW_TYPE_EX_SIDEBAR = 'exeditor-sidebar';
+
+/** 卡片离场动画时长（与 CSS --ex-leave-ms 一致） */
+const LEAVE_MS = 180;
+
+function fmtTokens(n: number): string {
+	if (n < 1000) return String(n);
+	const k = n / 1000;
+	return `${k >= 100 ? Math.round(k) : Math.round(k * 10) / 10}k`;
+}
+
+function fmtDuration(ms: number): string {
+	const sec = Math.round(ms / 1000);
+	if (sec < 60) return `${sec}s`;
+	return `${Math.floor(sec / 60)}m${sec % 60}s`;
+}
 
 /**
  * 侧边栏 v1：建议列表。
@@ -13,10 +29,14 @@ export const VIEW_TYPE_EX_SIDEBAR = 'exeditor-sidebar';
 export class ExSidebarView extends ItemView {
 	private cards = new Map<string, HTMLElement>();
 	private unsubscribers: (() => void)[] = [];
+	private checkScope: CheckScope = 'paragraph';
 	private subtitleEl!: HTMLElement;
-	private checkBtn!: HTMLButtonElement;
+	private segEl!: HTMLElement;
+	private segButtons: HTMLButtonElement[] = [];
+	private cancelBtn!: HTMLButtonElement;
 	private emptyEl!: HTMLElement;
 	private listEl!: HTMLElement;
+	private statsEl!: HTMLElement;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: ExEditorPlugin) {
 		super(leaf);
@@ -47,15 +67,30 @@ export class ExSidebarView extends ItemView {
 		const identityText = identity.createDiv({ cls: 'ex-identity-text' });
 		identityText.createDiv({ cls: 'ex-brand', text: 'ExEditor' });
 		this.subtitleEl = identityText.createDiv({ cls: 'ex-subtitle', text: '' });
-		this.checkBtn = header.createEl('button', { cls: 'ex-btn ex-btn-check' });
-		this.checkBtn.textContent = '检查本段落';
-		this.checkBtn.addEventListener('click', () => void this.plugin.runParagraphCheck());
+
+		const actions = header.createDiv({ cls: 'ex-actions' });
+		this.segEl = actions.createDiv({ cls: 'ex-seg' });
+		for (const [scope, label] of [
+			['paragraph', '段落'],
+			['selection', '选中'],
+			['full', '全文'],
+		] as const) {
+			const btn = this.segEl.createEl('button', { cls: 'ex-seg-item', text: label });
+			btn.addEventListener('click', () => {
+				this.checkScope = scope;
+				void this.plugin.runCheck(scope);
+			});
+			this.segButtons.push(btn);
+		}
+		this.cancelBtn = actions.createEl('button', { cls: 'ex-btn ex-btn-cancel', text: '取消' });
+		this.cancelBtn.addEventListener('click', () => this.plugin.checker.cancel());
 
 		this.emptyEl = root.createDiv({
 			cls: 'ex-empty',
-			text: '打开一篇文档，光标放进段落，运行「检查本段落」',
+			text: '打开一篇文档，光标放进段落、选中一段文字，或直接检查全文',
 		});
 		this.listEl = root.createDiv({ cls: 'ex-list' });
+		this.statsEl = root.createDiv({ cls: 'ex-stats', text: '' });
 
 		this.unsubscribers.push(
 			this.plugin.suggestions.subscribe(() => this.sync()),
@@ -79,12 +114,13 @@ export class ExSidebarView extends ItemView {
 			(e) => e.suggestion.status === 'pending' || e.suggestion.status === 'stale',
 		);
 
-		// 1. 移除不再可见的卡片
+		// 1. 移除不再可见的卡片（离场动画后删除节点）
 		const visibleIds = new Set(entries.map((e) => e.suggestion.id));
 		for (const [id, el] of this.cards) {
 			if (!visibleIds.has(id)) {
-				el.remove();
 				this.cards.delete(id);
+				el.addClass('ex-card-leaving');
+				window.setTimeout(() => el.remove(), LEAVE_MS);
 			}
 		}
 
@@ -107,16 +143,60 @@ export class ExSidebarView extends ItemView {
 			anchor = el.nextSibling;
 		}
 
-		// 3. 头部与空态
+		// 3. 头部、空态与过程信息
 		const running = this.plugin.checker.isRunning();
+		const progress = this.plugin.checker.getProgress();
 		const pending = entries.filter((e) => e.suggestion.status === 'pending').length;
-		this.subtitleEl.textContent = running
-			? '分析中，深思考可能需要一两分钟…'
-			: pending > 0
-				? `待处理 ${pending} 条`
-				: '';
-		this.checkBtn.disabled = running;
-		this.checkBtn.textContent = running ? '分析中…' : '检查本段落';
+		if (progress) {
+			const scopeLabel =
+				progress.scope === 'full' ? '全文' : progress.scope === 'selection' ? '选区' : '段落';
+			this.subtitleEl.textContent =
+				progress.batchTotal > 1
+					? `${scopeLabel} ${progress.batchIndex}/${progress.batchTotal} 批，逐句分析中…`
+					: '逐句分析中，深思考可能需要一两分钟…';
+		} else {
+			this.subtitleEl.textContent = pending > 0 ? `待处理 ${pending} 条` : '';
+		}
+		this.segEl.style.display = running ? 'none' : '';
+		this.cancelBtn.style.display = running ? '' : 'none';
+		if (!running) {
+			for (const btn of this.segButtons) btn.disabled = false;
+			for (const [i, btn] of this.segButtons.entries()) {
+				btn.classList.toggle(
+					'is-active',
+					(i === 0 && this.checkScope === 'paragraph') ||
+						(i === 1 && this.checkScope === 'selection') ||
+						(i === 2 && this.checkScope === 'full'),
+				);
+			}
+		}
 		this.emptyEl.style.display = entries.length ? 'none' : '';
+		this.statsEl.textContent = this.statsText();
+	}
+
+	/** 过程信息行：检查中显示进度，完成后常驻最近一次用量 */
+	private statsText(): string {
+		const p = this.plugin.checker.getProgress();
+		if (p) {
+			let text =
+				p.batchTotal > 1 ? `全文 ${p.batchIndex}/${p.batchTotal} 批` : '请求中';
+			if (p.phase === 'thinking') {
+				text += p.reasoningChars > 0 ? ` · 思考中… ${p.reasoningChars} 字` : ' · 思考中…';
+			} else {
+				text += ` · 已收 ${p.suggestionsSoFar} 条`;
+			}
+			return text;
+		}
+		const s = this.plugin.checker.getLastSummary();
+		if (!s || (s.promptTokens === 0 && s.completionTokens === 0 && !s.reasoningTokens)) return '';
+		const parts: string[] = [];
+		if (typeof s.reasoningTokens === 'number' && s.reasoningTokens > 0) {
+			parts.push(`思考 ${fmtTokens(s.reasoningTokens)} tok`);
+		}
+		const total = s.promptTokens + s.completionTokens;
+		if (total > 0) parts.push(`共 ${fmtTokens(total)} tok`);
+		if (s.durationMs > 0) parts.push(fmtDuration(s.durationMs));
+		if (s.batches > 1) parts.push(`${s.batches} 批`);
+		return parts.join(' · ');
 	}
 }

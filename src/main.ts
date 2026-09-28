@@ -1,6 +1,8 @@
 import { Notice, Plugin } from 'obsidian';
+import type { Editor, Menu } from 'obsidian';
 import { EditorContextResolver } from './editorContext';
 import { CheckController } from './controller/checkController';
+import type { CheckScope } from './controller/checkController';
 import { SuggestionController } from './controller/suggestionController';
 import { ExSettingTab, DEFAULT_SETTINGS } from './settings';
 import { ExSidebarView, VIEW_TYPE_EX_SIDEBAR } from './view/sidebar';
@@ -34,7 +36,22 @@ export default class ExEditorPlugin extends Plugin {
 		this.addCommand({
 			id: 'check-paragraph',
 			name: '检查本段落',
-			callback: () => void this.runParagraphCheck(),
+			callback: () => void this.runCheck('paragraph'),
+		});
+		this.addCommand({
+			id: 'check-selection',
+			name: '检查选中文字（无选区时检查本段落）',
+			callback: () => void this.runCheck('selection'),
+		});
+		this.addCommand({
+			id: 'check-full',
+			name: '检查全文',
+			callback: () => void this.runCheck('full'),
+		});
+		this.addCommand({
+			id: 'cancel-check',
+			name: '取消进行中的检查',
+			callback: () => this.checker.cancel(),
 		});
 		this.addCommand({
 			id: 'smoke-test',
@@ -49,6 +66,17 @@ export default class ExEditorPlugin extends Plugin {
 		);
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => this.resolver.noteFile(file)),
+		);
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
+				const hasSelection = editor.listSelections().some((s) => s.anchor !== s.head);
+				menu.addItem((item) =>
+					item
+						.setTitle(hasSelection ? '检查选中文字' : '检查本段落')
+						.setIcon('spell-check')
+						.onClick(() => void this.runCheck(hasSelection ? 'selection' : 'paragraph')),
+				);
+			}),
 		);
 
 		this.addSettingTab(new ExSettingTab(this.app, this));
@@ -67,9 +95,9 @@ export default class ExEditorPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	/** 检查当前段落；有建议时自动展示侧边栏 */
-	async runParagraphCheck(): Promise<void> {
-		const added = await this.checker.checkParagraph();
+	/** 运行指定范围的检查；有建议时自动展示侧边栏 */
+	async runCheck(scope: CheckScope): Promise<void> {
+		const added = await this.checker.run(scope);
 		if (added > 0) await this.activateSidebar();
 	}
 

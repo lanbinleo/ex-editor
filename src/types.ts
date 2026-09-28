@@ -52,11 +52,16 @@ export interface RawIssue {
   explanation?: unknown;
 }
 
+/** 思维链参数形态：auto 不发送（跟随服务商默认）/ on thinking enabled / off thinking disabled / effort reasoning_effort */
+export type ReasoningMode = 'auto' | 'on' | 'off' | 'effort';
+
 /** M1 设置：单一 OpenAI 兼容提供商，密钥只存本地 data.json */
 export interface ExSettings {
-  /** 预设名：deepseek / glm / custom */
-  preset: string;
-  baseURL: string;
-  apiKey: string;
-  model: string;
+	/** 预设名：deepseek / glm / custom */
+	preset: string;
+	baseURL: string;
+	apiKey: string;
+	model: string;
+	reasoningMode: ReasoningMode;
+	reasoningEffort: 'low' | 'medium' | 'high';
 }
