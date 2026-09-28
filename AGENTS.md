@@ -3,7 +3,7 @@
 ## Project Snapshot
 
 - ExEditor（有经验的编辑）：Obsidian 第三方插件，面向中文写作者的 AI 校对与改稿工具。
-- 当前阶段：M0 骨架（v0.1.0），仅有冒烟命令；功能自 M1 起交付，见 `docs/roadmap.md`。
+- 当前阶段：M1 最小安全闭环（v0.2.0，dev/0.2.0 分支，待真机验收）；「检查本段落」→ 侧边栏 → 接受/忽略闭环可用，见 `docs/roadmap.md`。
 - 技术栈：TypeScript（strict）+ esbuild（打包到 `main.js`）+ vitest + eslint（eslint-plugin-obsidianmd）。运行时依赖 Obsidian 内置的 CodeMirror 6（`@codemirror/*` 仅作 devDependencies 提供类型，esbuild 中 external）。
 - 开发位置特殊：本仓库就在 vault 内（`写作人生/.obsidian/plugins/exeditor/`），**构建产物 main.js 即运行时插件**，原地开发，无部署步骤。
 - 本仓库是独立 Git 仓库，vault 的 `.gitignore` 已排除本目录；旧插件 `editing-suggestions` 仍安装在同一 vault（id 不同，共存，M4 后由用户手动停用）。
@@ -29,7 +29,13 @@
 | 文件 | 职责 |
 |---|---|
 | `manifest.json` | 插件身份（id `exeditor`）。修改 id/name 需重启 Obsidian 才生效 |
-| `src/main.ts` | 唯一入口，`ExEditorPlugin`。改动结构时同步本表与 README |
+| `src/main.ts` | 唯一入口，`ExEditorPlugin`。只管生命周期与注册，不含业务逻辑；改动结构时同步本表与 README |
+| `src/core/` | 安全核心纯函数（parse/protected/validate/diff/apply/paragraph），可单测，不依赖 obsidian API |
+| `src/controller/` | 业务编排：`checkController` 段落检查、`suggestionController` 建议管理（M1 为内存态） |
+| `src/view/sidebar.ts` + `card.ts` | 侧边栏 v1（精确更新红线在此落实）与建议卡片 DOM |
+| `src/llm/` | LLM 客户端（fetch 优先 + requestUrl 兜底）与提示词 |
+| `src/settings.ts` | 设置页与提供商预设 |
+| `src/editorContext.ts` | 「当前操作的文档」解析（焦点回落到最近编辑的 Markdown 视图） |
 | `esbuild.config.mjs` | 打包配置，entry 固定 `src/main.ts`，CM6/lezer/obsidian 均 external |
 | `tests/*.spec.ts` | vitest 单测；M1 起为移植的核心模块测试 |
 | `legacy/writingbuddy/` | 旧项目只读快照，**不参与构建**，移植时从此复制后在新 src/ 修改 |

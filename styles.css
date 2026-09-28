@@ -1,6 +1,289 @@
 /*
-ExEditor 样式表。
+ExEditor 样式表。所有类名以 `ex-` 为前缀，避免与宿主及其他插件冲突。
 
-M0 阶段暂无样式。后续所有类名以 `ex-` 为前缀（如 `.ex-suggestion-card`），
-避免与 Obsidian 宿主及其他插件冲突。
+设计原则（继承自旧版的视觉语言）：
+ 1. 强调色跟随用户主题（--interactive-accent），不硬编码品牌色
+ 2. 正文优先：建议内容当正文读，不加盒子感；只有「改动本身」被标记
+ 3. 控件安静：按钮默认透明，悬停才浮现边框与底色
+ 4. 类别色只用于语义标记（圆点/波浪线），不参与界面装饰
 */
+
+/* ---------------- 分类色与 diff 色（语义，双主题） ---------------- */
+body {
+	--ex-c-typo: #d2405a;
+	--ex-c-punctuation: #b57909;
+	--ex-c-grammar: #4460d8;
+	--ex-c-wording: #8e4ec6;
+	--ex-del-bg: rgba(220, 76, 70, 0.16);
+	--ex-del-line: rgba(220, 76, 70, 0.75);
+	--ex-ins-bg: rgba(70, 167, 88, 0.18);
+}
+
+body.theme-dark {
+	--ex-c-typo: #ff8095;
+	--ex-c-punctuation: #e6b054;
+	--ex-c-grammar: #8ba0ff;
+	--ex-c-wording: #c79bef;
+	--ex-del-bg: rgba(255, 120, 130, 0.15);
+	--ex-del-line: rgba(255, 120, 130, 0.8);
+	--ex-ins-bg: rgba(90, 200, 130, 0.16);
+}
+
+/* ---------------- 侧边栏骨架 ---------------- */
+.ex-root {
+	--ex-accent: var(--interactive-accent);
+	--ex-gutter: 11px;
+	--ex-radius: 7px;
+	--ex-font-body: 14px;
+	--ex-font-ui: 12.5px;
+	--ex-font-meta: 11.5px;
+	--ex-line: 1.75;
+
+	height: 100%;
+	overflow-y: auto;
+	font-size: var(--ex-font-ui);
+	/* 面板正文可选中复制；控件关闭选中 */
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+.ex-root button {
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+/* 按钮彻底复位：Obsidian 默认按钮是填充矩形，会盖住安静控件的意图 */
+.ex-root button {
+	height: auto;
+	min-height: 0;
+	line-height: normal;
+	text-align: inherit;
+	background: transparent;
+	background-color: transparent;
+	border: 1px solid transparent;
+	box-shadow: none;
+	color: inherit;
+	font-size: var(--ex-font-meta);
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.ex-root button:hover {
+	box-shadow: none;
+}
+
+.ex-root button:focus-visible {
+	outline: 2px solid var(--ex-accent);
+	outline-offset: 1px;
+}
+
+/* ---------------- 头部 ---------------- */
+.ex-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px var(--ex-gutter) 4px;
+}
+
+.ex-identity {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	flex: 1;
+}
+
+.ex-brand-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border-radius: var(--ex-radius);
+	background: color-mix(in srgb, var(--ex-accent) 15%, transparent);
+	color: var(--ex-accent);
+	flex-shrink: 0;
+}
+
+.ex-brand-icon .svg-icon {
+	width: 15px;
+	height: 15px;
+}
+
+.ex-identity-text {
+	min-width: 0;
+	line-height: 1.3;
+}
+
+.ex-brand {
+	font-weight: 600;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ex-subtitle {
+	color: var(--text-faint);
+	font-size: var(--ex-font-meta);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* ---------------- 安静按钮 ---------------- */
+.ex-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 10px;
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+}
+
+.ex-btn:hover:not(:disabled) {
+	border-color: var(--background-modifier-border-hover);
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.ex-btn:disabled {
+	opacity: 0.38;
+	cursor: default;
+}
+
+/* 主要动作（检查 / 接受）：强调色文字的安静按钮，悬停浮现浅染 */
+.ex-btn-check,
+.ex-btn-accept {
+	color: var(--ex-accent);
+}
+
+.ex-btn-check:hover:not(:disabled),
+.ex-btn-accept:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--ex-accent) 40%, transparent);
+	background: color-mix(in srgb, var(--ex-accent) 10%, transparent);
+	color: var(--ex-accent);
+}
+
+/* ---------------- 字符级 diff 标记 ---------------- */
+.ex-diff-del {
+	background: var(--ex-del-bg);
+	color: var(--text-normal);
+	text-decoration: line-through;
+	text-decoration-color: var(--ex-del-line);
+	border-radius: 2px;
+}
+
+.ex-diff-ins {
+	background: var(--ex-ins-bg);
+	color: var(--text-normal);
+	border-radius: 2px;
+}
+
+/* ---------------- 建议列表 ---------------- */
+.ex-list {
+	display: flex;
+	flex-direction: column;
+	padding: 6px 0 0;
+}
+
+/* 无盒子：条目之间只有一条发丝线，悬停浮现极浅底色 */
+.ex-card {
+	padding: 10px var(--ex-gutter) 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+}
+
+.ex-card:hover {
+	background: var(--background-modifier-hover);
+}
+
+.ex-card:last-child {
+	border-bottom: none;
+}
+
+.ex-card-stale {
+	opacity: 0.55;
+}
+
+.ex-card-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--ex-font-meta);
+	color: var(--text-faint);
+	margin-bottom: 4px;
+}
+
+.ex-cat-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.ex-card.ex-cat-typo .ex-cat-dot {
+	background: var(--ex-c-typo);
+}
+
+.ex-card.ex-cat-punctuation .ex-cat-dot {
+	background: var(--ex-c-punctuation);
+}
+
+.ex-card.ex-cat-grammar .ex-cat-dot {
+	background: var(--ex-c-grammar);
+}
+
+.ex-card.ex-cat-wording .ex-cat-dot {
+	background: var(--ex-c-wording);
+}
+
+.ex-card-cat {
+	color: var(--text-muted);
+}
+
+.ex-card-sep {
+	color: var(--text-faint);
+}
+
+/* 建议正文：当正文读 */
+.ex-card-body {
+	font-size: var(--ex-font-body);
+	line-height: var(--ex-line);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text-normal);
+}
+
+.ex-card-expl {
+	color: var(--text-muted);
+	font-size: var(--ex-font-meta);
+	line-height: 1.6;
+	margin-top: 4px;
+}
+
+.ex-card-note {
+	color: var(--text-faint);
+	font-size: var(--ex-font-meta);
+	margin-top: 4px;
+}
+
+.ex-card-actions {
+	display: flex;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+/* ---------------- 空态 ---------------- */
+.ex-empty {
+	color: var(--text-faint);
+	font-size: var(--ex-font-ui);
+	text-align: center;
+	padding: 26px var(--ex-gutter);
+	line-height: 1.7;
+}
+
+/* ---------------- 设置页提示 ---------------- */
+.ex-setting-hint {
+	margin: -6px 0 12px 0;
+}

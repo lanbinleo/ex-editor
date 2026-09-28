@@ -11,9 +11,9 @@
 - 文档体系（AGENTS、README、docs 四件套）与 legacy 存档
 - 验收：插件能在 Obsidian 加载，冒烟命令可执行
 
-### M1 (0.2.0) 最小安全闭环
+### M1 (0.2.0) 最小安全闭环 ✅ 代码完成 2026-09-28（待真机验收）
 
-- 移植纯核心模块 `validate` / `protected` / `apply` / `diff` / `parse` + 全部单测
+- 移植纯核心模块 `validate` / `protected` / `apply` / `diff` / `parse` + 全部单测（41 个）
 - 「检查本段落」命令：OpenAI 兼容单提供商（DeepSeek/GLM 预设 + 自定义）
 - 设置页：baseURL / API Key / 模型 / 测试连接
 - 侧边栏 v1：建议列表（精确更新架构），逐条接受（单事务、可撤销）/ 忽略
