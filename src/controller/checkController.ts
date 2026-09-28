@@ -7,6 +7,7 @@ import { findProtectedRanges } from '../core/protected';
 import { parseIssues } from '../core/parse';
 import { validateAndLocate } from '../core/validate';
 import { chatCompletionStream } from '../llm/client';
+import { estimateCostYuan, getPricing } from '../llm/pricing';
 import { buildCheckUserPrompt, buildProofreadSystemPrompt } from '../llm/prompts';
 
 export type CheckScope = 'paragraph' | 'selection' | 'full';
@@ -36,6 +37,8 @@ export interface RunSummary {
 	reasoningTokens?: number;
 	durationMs: number;
 	batches: number;
+	/** 本次运行估算费用（元）；模型无价格配置时省略 */
+	costYuan?: number;
 }
 
 /** 检查编排：一次只跑一个；进度与用量经 subscribe 推给界面 */
@@ -46,6 +49,8 @@ export class CheckController {
 	private progress: RunProgress | null = null;
 	private lastSummary: RunSummary | null = null;
 	private lastEmit = 0;
+	/** 本次会话累计估算费用（元），插件加载起算 */
+	private sessionCostYuan = 0;
 
 	constructor(private plugin: ExEditorPlugin) {}
 
@@ -59,6 +64,10 @@ export class CheckController {
 
 	getLastSummary(): RunSummary | null {
 		return this.lastSummary;
+	}
+
+	getSessionCostYuan(): number {
+		return this.sessionCostYuan;
 	}
 
 	/** 用户取消进行中的检查 */
@@ -196,6 +205,9 @@ export class CheckController {
 			durationMs: 0,
 			batches: batches.length,
 		};
+		// 价格在运行开始时定格（模型中途改价不影响本次估算）
+		const runPricing = getPricing(this.plugin.settings, this.plugin.settings.model);
+		let runCostYuan = 0;
 		const started = Date.now();
 		let cancelled = false;
 
@@ -245,6 +257,15 @@ export class CheckController {
 				summary.completionTokens += result.completionTokens;
 				summary.reasoningTokens =
 					(summary.reasoningTokens ?? 0) + (result.reasoningTokens ?? 0) || undefined;
+				if (runPricing) {
+					const batchCost = estimateCostYuan(
+						runPricing,
+						result.promptTokens,
+						result.completionTokens,
+					);
+					runCostYuan += batchCost;
+					this.sessionCostYuan += batchCost;
+				}
 
 				const issues = parseIssues(result.content);
 				const protectedRanges = findProtectedRanges(docText);
@@ -275,6 +296,7 @@ export class CheckController {
 			}
 		} finally {
 			summary.durationMs = Date.now() - started;
+			if (runCostYuan > 0) summary.costYuan = runCostYuan;
 			this.running = false;
 			this.abort = null;
 			this.progress = null;

@@ -2,6 +2,7 @@ import { Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { App } from 'obsidian';
 import type ExEditorPlugin from './main';
 import { testConnection } from './llm/client';
+import { getPricing } from './llm/pricing';
 import type { ExSettings } from './types';
 
 interface Preset {
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: ExSettings = {
 	model: PRESETS.deepseek?.model ?? '',
 	reasoningMode: 'auto',
 	reasoningEffort: 'medium',
+	pricing: {},
 };
 
 export class ExSettingTab extends PluginSettingTab {
@@ -150,6 +152,58 @@ export class ExSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+		}
+
+		new Setting(containerEl).setName('计费').setHeading();
+
+		if (!s.model) {
+			containerEl.createDiv({
+				cls: 'setting-item-description ex-setting-hint',
+				text: '先填写模型名，再配置价格',
+			});
+		} else {
+			const builtin = getPricing(s, s.model);
+			const custom = s.pricing[s.model];
+			let inVal = custom ? String(custom.input) : '';
+			let outVal = custom ? String(custom.output) : '';
+			const save = async (): Promise<void> => {
+				const i = parseFloat(inVal);
+				const o = parseFloat(outVal);
+				const ok = (v: number): boolean => Number.isFinite(v) && v >= 0;
+				if (inVal.trim() === '' && outVal.trim() === '') {
+					delete s.pricing[s.model];
+				} else if (ok(i) && ok(o)) {
+					s.pricing[s.model] = { input: i, output: o };
+				} else {
+					return; // 只填了一项或数值非法：暂不保存
+				}
+				await this.plugin.saveSettings();
+			};
+			new Setting(containerEl)
+				.setName(`「${s.model}」价格`)
+				.setDesc(
+					builtin
+						? `元 / 百万 tokens。内置官方价：输入 ¥${builtin.input} / 输出 ¥${builtin.output}（2026-09 核对，DeepSeek 取高峰价）；填写后覆盖`
+						: '元 / 百万 tokens。该模型无内置价格（如 glm-4.6 已从官方价目表下架），两项都填写后侧边栏显示费用估算',
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder('输入价')
+						.setValue(inVal)
+						.onChange(async (v) => {
+							inVal = v.trim();
+							await save();
+						}),
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder('输出价')
+						.setValue(outVal)
+						.onChange(async (v) => {
+							outVal = v.trim();
+							await save();
+						}),
+				);
 		}
 
 		new Setting(containerEl).setName('测试连接').addButton((button) => {

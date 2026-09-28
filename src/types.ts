@@ -55,6 +55,12 @@ export interface RawIssue {
 /** 思维链参数形态：auto 不发送（跟随服务商默认）/ on thinking enabled / off thinking disabled / effort reasoning_effort */
 export type ReasoningMode = 'auto' | 'on' | 'off' | 'effort';
 
+/** 模型价格（人民币元 / 百万 tokens），用于费用估算 */
+export interface ModelPricing {
+	input: number;
+	output: number;
+}
+
 /** M1 设置：单一 OpenAI 兼容提供商，密钥只存本地 data.json */
 export interface ExSettings {
 	/** 预设名：deepseek / glm / custom */
@@ -64,4 +70,6 @@ export interface ExSettings {
 	model: string;
 	reasoningMode: ReasoningMode;
 	reasoningEffort: 'low' | 'medium' | 'high';
+	/** 按模型名自定义价格（覆盖内置官方价）；键为模型名 */
+	pricing: Record<string, ModelPricing>;
 }
