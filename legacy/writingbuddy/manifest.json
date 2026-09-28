@@ -1,0 +1,9 @@
+{
+  "id": "editing-suggestions",
+  "name": "编辑建议 (Editing Suggestions)",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.8",
+  "description": "中文 AI 校对：全文语法检查、正文波浪线标记、悬浮卡片一键替换、自定义指令与快照备份。",
+  "author": "huozi",
+  "isDesktopOnly": false
+}

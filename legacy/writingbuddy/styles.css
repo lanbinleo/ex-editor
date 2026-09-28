@@ -1,0 +1,577 @@
+/* ================= 编辑建议 (Editing Suggestions) =================
+ * 设计遵循的原则（参考 Writing Buddy 的做法）：
+ *  1. 强调色跟随用户主题（--interactive-accent），不硬编码品牌色
+ *  2. 正文优先：建议内容当正文读，不加盒子感；只有「改动本身」被标记
+ *  3. 控件安静：按钮默认透明，悬停才浮现边框与底色
+ *  4. 类别色只用于波浪线与圆点（语义色），不参与界面装饰
+ * ================================================================ */
+
+/* ---------------- 分类色与标记色（语义，双主题） ---------------- */
+body {
+  --es-c-typo: #d2405a;
+  --es-c-punctuation: #b57909;
+  --es-c-grammar: #4460d8;
+  --es-c-wording: #8e4ec6;
+  --es-c-typo-bg: rgba(210, 64, 90, 0.1);
+  --es-c-punctuation-bg: rgba(181, 121, 9, 0.1);
+  --es-c-grammar-bg: rgba(68, 96, 216, 0.1);
+  --es-c-wording-bg: rgba(142, 78, 198, 0.1);
+  --es-del-bg: rgba(220, 76, 70, 0.16);
+  --es-del-line: rgba(220, 76, 70, 0.75);
+  --es-ins-bg: rgba(70, 167, 88, 0.18);
+}
+
+body.theme-dark {
+  --es-c-typo: #ff8095;
+  --es-c-punctuation: #e6b054;
+  --es-c-grammar: #8ba0ff;
+  --es-c-wording: #c79bef;
+  --es-c-typo-bg: rgba(255, 128, 149, 0.13);
+  --es-c-punctuation-bg: rgba(230, 176, 84, 0.13);
+  --es-c-grammar-bg: rgba(139, 160, 255, 0.13);
+  --es-c-wording-bg: rgba(199, 155, 239, 0.13);
+  --es-del-bg: rgba(255, 120, 130, 0.15);
+  --es-del-line: rgba(255, 120, 130, 0.8);
+  --es-ins-bg: rgba(90, 200, 130, 0.16);
+}
+
+/* ---------------- 正文波浪线标记 ---------------- */
+.es-mark {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  border-radius: 2px;
+  transition: background-color 120ms ease;
+}
+
+.es-mark.es-cat-typo {
+  text-decoration-color: var(--es-c-typo);
+}
+.es-mark.es-cat-punctuation {
+  text-decoration-color: var(--es-c-punctuation);
+}
+.es-mark.es-cat-grammar {
+  text-decoration-color: var(--es-c-grammar);
+}
+.es-mark.es-cat-wording {
+  text-decoration-color: var(--es-c-wording);
+}
+
+.es-mark.es-cat-typo.es-active,
+.es-mark.es-cat-typo:hover {
+  background-color: var(--es-c-typo-bg);
+}
+.es-mark.es-cat-punctuation.es-active,
+.es-mark.es-cat-punctuation:hover {
+  background-color: var(--es-c-punctuation-bg);
+}
+.es-mark.es-cat-grammar.es-active,
+.es-mark.es-cat-grammar:hover {
+  background-color: var(--es-c-grammar-bg);
+}
+.es-mark.es-cat-wording.es-active,
+.es-mark.es-cat-wording:hover {
+  background-color: var(--es-c-wording-bg);
+}
+
+/* ---------------- 悬浮卡片 ---------------- */
+.cm-tooltip.es-tooltip-host {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.es-tooltip {
+  min-width: 250px;
+  max-width: min(400px, 60vw);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-s);
+  padding: 10px 12px;
+}
+
+/* ---------------- 侧边栏骨架 ---------------- */
+.es-root {
+  --es-accent: var(--interactive-accent);
+  --es-gutter: 11px;
+  --es-radius: 7px;
+  --es-font-body: 14px;
+  --es-font-ui: 12.5px;
+  --es-font-meta: 11.5px;
+  --es-line: 1.75;
+
+  height: 100%;
+  overflow-y: auto;
+  font-size: var(--es-font-ui);
+  /* 面板正文可选中复制；控件关闭选中 */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.es-root button,
+.es-tooltip button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 按钮彻底复位：Obsidian 默认按钮是填充矩形，会盖住安静控件的意图。
+   .es-root button 的特异性 (0,1,1) 需要 beaten only by 自身组件类。 */
+.es-root button,
+.es-tooltip button {
+  height: auto;
+  min-height: 0;
+  line-height: normal;
+  text-align: inherit;
+  background: transparent;
+  background-color: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: var(--es-font-meta);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.es-root button:hover,
+.es-tooltip button:hover {
+  box-shadow: none;
+}
+
+.es-root button:focus-visible,
+.es-tooltip button:focus-visible {
+  outline: 2px solid var(--es-accent);
+  outline-offset: 1px;
+}
+
+/* ---------------- 头部 ---------------- */
+.es-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px var(--es-gutter) 4px;
+}
+
+.es-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.es-brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--es-radius);
+  background: color-mix(in srgb, var(--es-accent) 15%, transparent);
+  color: var(--es-accent);
+  flex-shrink: 0;
+}
+
+.es-brand-icon .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.es-identity-text {
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.es-brand {
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.es-subtitle {
+  color: var(--text-faint);
+  font-size: var(--es-font-meta);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------- 安静按钮 ---------------- */
+.es-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+}
+
+.es-btn:hover:not(:disabled) {
+  border-color: var(--background-modifier-border-hover);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.es-btn:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* 主要动作（检查全文 / 运行 / 应用 / 接受）：强调色文字的安静按钮，
+   静止时无底色，悬停浮现浅染 */
+.es-btn-check,
+.es-btn-run,
+.es-btn-accept {
+  color: var(--es-accent);
+}
+
+.es-btn-check:hover:not(:disabled),
+.es-btn-run:hover:not(:disabled),
+.es-btn-accept:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--es-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--es-accent) 10%, transparent);
+  color: var(--es-accent);
+}
+
+/* ---------------- 分段控件（筛选 / 模式） ---------------- */
+.es-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px var(--es-gutter) 2px;
+}
+
+.es-seg {
+  display: inline-flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+}
+
+.es-seg-item {
+  border: none;
+  border-radius: calc(var(--radius-s) - 1px);
+  padding: 2px 9px;
+  color: var(--text-muted);
+}
+
+.es-seg-item:hover:not(.is-active) {
+  color: var(--text-normal);
+}
+
+.es-seg-item.is-active {
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.es-sev-select {
+  font-size: var(--es-font-meta);
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+/* ---------------- 指令输入（底部常驻，聚焦展开） ---------------- */
+.es-bottom {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px var(--es-gutter) 10px;
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.es-composer-input {
+  width: 100%;
+  min-height: 34px;
+  max-height: 140px;
+  overflow-y: hidden;
+  resize: none;
+  font-family: inherit;
+  font-size: var(--es-font-ui);
+  line-height: 1.6;
+  padding: 7px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.es-composer-input:focus {
+  outline: none;
+  border-color: var(--background-modifier-border-focus);
+}
+
+/* 折叠态只有一行输入；聚焦或有内容时展开模式与运行按钮 */
+.es-bottom .es-composer-foot {
+  display: none;
+}
+
+.es-bottom.es-open .es-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.es-hint {
+  color: var(--text-faint);
+  font-size: var(--es-font-meta);
+  line-height: 1.5;
+}
+
+/* ---------------- 字符级 diff 标记（卡片与重写共用） ---------------- */
+.es-diff-del {
+  background: var(--es-del-bg);
+  color: var(--text-normal);
+  text-decoration: line-through;
+  text-decoration-color: var(--es-del-line);
+  border-radius: 2px;
+}
+
+.es-diff-ins {
+  background: var(--es-ins-bg);
+  color: var(--text-normal);
+  border-radius: 2px;
+}
+
+/* ---------------- 建议卡片 ---------------- */
+.es-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0 0;
+}
+
+/* 无盒子：条目之间只有一条发丝线，悬停浮现极浅底色 */
+.es-card {
+  padding: 10px var(--es-gutter) 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.es-card:hover {
+  background: var(--background-modifier-hover);
+}
+
+.es-card:last-child {
+  border-bottom: none;
+}
+
+.es-card-stale {
+  opacity: 0.55;
+}
+
+.es-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--es-font-meta);
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.es-cat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.es-card.es-cat-typo .es-cat-dot {
+  background: var(--es-c-typo);
+}
+.es-card.es-cat-punctuation .es-cat-dot {
+  background: var(--es-c-punctuation);
+}
+.es-card.es-cat-grammar .es-cat-dot {
+  background: var(--es-c-grammar);
+}
+.es-card.es-cat-wording .es-cat-dot {
+  background: var(--es-c-wording);
+}
+
+.es-card-cat {
+  color: var(--text-muted);
+}
+
+.es-card-sep {
+  color: var(--text-faint);
+}
+
+/* 建议正文：当正文读 */
+.es-card-body {
+  font-size: var(--es-font-body);
+  line-height: var(--es-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-normal);
+}
+
+.es-card-expl {
+  color: var(--text-muted);
+  font-size: var(--es-font-meta);
+  line-height: 1.6;
+  margin-top: 4px;
+}
+
+.es-card-note {
+  color: var(--text-faint);
+  font-size: var(--es-font-meta);
+  margin-top: 4px;
+}
+
+.es-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* 悬浮卡片里的排版收紧一档 */
+.es-tooltip .es-card-body {
+  font-size: var(--es-font-ui);
+}
+
+.es-tooltip .es-card {
+  padding: 0;
+  border-bottom: none;
+  cursor: default;
+}
+
+/* ---------------- 重写预览 ---------------- */
+.es-rewrite {
+  margin: 6px var(--es-gutter) 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--es-radius);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.es-rewrite-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.es-rewrite-title {
+  font-weight: 600;
+  color: var(--text-normal);
+  font-size: var(--es-font-ui);
+}
+
+.es-rewrite-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.es-rewrite-body {
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: var(--es-font-body);
+  line-height: var(--es-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: var(--radius-s);
+  background: var(--background-primary-alt);
+  padding: 8px 9px;
+  color: var(--text-normal);
+}
+
+.es-rw-same {
+  color: var(--text-muted);
+}
+
+.es-rewrite-instruction {
+  white-space: normal;
+}
+
+/* ---------------- 列表空态 / 底部 ---------------- */
+.es-empty {
+  color: var(--text-faint);
+  font-size: var(--es-font-ui);
+  text-align: center;
+  padding: 26px var(--es-gutter);
+  line-height: 1.7;
+}
+
+.es-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px var(--es-gutter) 2px;
+}
+
+/* ---------------- 备份 ---------------- */
+.es-backups {
+  padding: 2px var(--es-gutter) 12px;
+}
+
+.es-backups summary {
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: var(--es-font-meta);
+  user-select: none;
+  padding: 4px 0;
+}
+
+.es-backups summary:hover {
+  color: var(--text-muted);
+}
+
+.es-backup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 2px 10px;
+}
+
+.es-backup-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--es-font-meta);
+}
+
+.es-backup-time {
+  color: var(--text-muted);
+}
+
+/* ---------------- 联动闪烁 ---------------- */
+@keyframes es-flash-kf {
+  0% {
+    background: color-mix(in srgb, var(--es-accent) 18%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.es-flash {
+  animation: es-flash-kf 900ms ease-out;
+}
+
+/* ---------------- 状态栏 ---------------- */
+.es-statusbar {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+/* ---------------- 设置页提示 ---------------- */
+.es-setting-hint {
+  margin: -6px 0 12px 0;
+}

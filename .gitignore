@@ -1,0 +1,21 @@
+# vscode
+.vscode
+
+# Intellij
+*.iml
+.idea
+
+# npm
+node_modules
+
+# Exclude sourcemaps
+*.map
+
+# obsidian 运行时数据（含 API Key，绝不入库）
+data.json
+
+# 其他工具的运行时标记（video-agent-kit 探测痕迹）
+.video_agent/
+
+# Exclude macOS Finder (System Explorer) View States
+.DS_Store

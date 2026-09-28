@@ -1,0 +1,6 @@
+/*
+ExEditor 样式表。
+
+M0 阶段暂无样式。后续所有类名以 `ex-` 为前缀（如 `.ex-suggestion-card`），
+避免与 Obsidian 宿主及其他插件冲突。
+*/
