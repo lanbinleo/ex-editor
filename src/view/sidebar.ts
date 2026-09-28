@@ -55,9 +55,10 @@ export class ExSidebarView extends ItemView {
 	private lastPreviewKey = '';
 	private subtitleEl!: HTMLElement;
 	private segButtons: HTMLButtonElement[] = [];
-	private strengthSelect!: HTMLSelectElement;
+	private strengthButtons: HTMLButtonElement[] = [];
 	private runBtn!: HTMLButtonElement;
 	private cancelBtn!: HTMLButtonElement;
+	private toolbarEl!: HTMLElement;
 	private segWrapEl!: HTMLElement;
 	private scopeBoxEl!: HTMLElement;
 	private scopeLabelEl!: HTMLElement;
@@ -99,6 +100,7 @@ export class ExSidebarView extends ItemView {
 		root.empty();
 		root.addClass('ex-root');
 
+		// 头部两行：第一行品牌 + 主动作（检查/取消）；第二行范围与强度两组分段控件
 		const header = root.createDiv({ cls: 'ex-header' });
 		const identity = header.createDiv({ cls: 'ex-identity' });
 		const iconBox = identity.createDiv({ cls: 'ex-brand-icon' });
@@ -107,8 +109,14 @@ export class ExSidebarView extends ItemView {
 		identityText.createDiv({ cls: 'ex-brand', text: 'ExEditor' });
 		this.subtitleEl = identityText.createDiv({ cls: 'ex-subtitle', text: '' });
 
-		const actions = header.createDiv({ cls: 'ex-actions' });
-		this.segWrapEl = actions.createDiv({ cls: 'ex-seg' });
+		this.runBtn = header.createEl('button', { cls: 'ex-btn ex-btn-check', text: '检查' });
+		this.runBtn.addEventListener('click', () => void this.plugin.runCheck(this.checkScope));
+		this.cancelBtn = header.createEl('button', { cls: 'ex-btn ex-btn-cancel', text: '取消' });
+		this.cancelBtn.addEventListener('click', () => this.plugin.checker.cancelActive());
+
+		const toolbar = root.createDiv({ cls: 'ex-toolbar' });
+		this.toolbarEl = toolbar;
+		this.segWrapEl = toolbar.createDiv({ cls: 'ex-seg' });
 		for (const [scope, label] of [
 			['paragraph', '段落'],
 			['selection', '选中'],
@@ -121,18 +129,17 @@ export class ExSidebarView extends ItemView {
 			});
 			this.segButtons.push(btn);
 		}
-		this.strengthSelect = actions.createEl('select', { cls: 'ex-strength-select' });
+		const strengthSeg = toolbar.createDiv({ cls: 'ex-seg' });
 		for (const [value, label] of Object.entries(STRENGTH_LABELS)) {
-			this.strengthSelect.createEl('option', { text: label }).value = value;
+			const btn = strengthSeg.createEl('button', { cls: 'ex-seg-item', text: label });
+			btn.dataset.strength = value;
+			btn.addEventListener('click', () => {
+				this.plugin.settings.checkStrength = value as CheckStrength;
+				void this.plugin.saveSettings();
+				this.sync();
+			});
+			this.strengthButtons.push(btn);
 		}
-		this.strengthSelect.addEventListener('change', () => {
-			this.plugin.settings.checkStrength = this.strengthSelect.value as CheckStrength;
-			void this.plugin.saveSettings();
-		});
-		this.runBtn = actions.createEl('button', { cls: 'ex-btn ex-btn-check', text: '检查' });
-		this.runBtn.addEventListener('click', () => void this.plugin.runCheck(this.checkScope));
-		this.cancelBtn = actions.createEl('button', { cls: 'ex-btn ex-btn-cancel', text: '取消' });
-		this.cancelBtn.addEventListener('click', () => this.plugin.checker.cancelActive());
 
 		this.scopeBoxEl = root.createDiv({ cls: 'ex-scope' });
 		this.scopeLabelEl = this.scopeBoxEl.createDiv({ cls: 'ex-scope-label' });
@@ -321,8 +328,7 @@ export class ExSidebarView extends ItemView {
 		} else {
 			this.subtitleEl.textContent = pending > 0 ? `待处理 ${pending} 条` : '';
 		}
-		this.segWrapEl.style.display = running ? 'none' : '';
-		this.strengthSelect.style.display = running ? 'none' : '';
+		this.toolbarEl.style.display = running ? 'none' : '';
 		this.runBtn.style.display = running ? 'none' : '';
 		this.cancelBtn.style.display = running ? '' : 'none';
 		for (const [i, btn] of this.segButtons.entries()) {
@@ -333,8 +339,8 @@ export class ExSidebarView extends ItemView {
 					(i === 2 && this.checkScope === 'full'),
 			);
 		}
-		if (this.strengthSelect.value !== this.plugin.settings.checkStrength) {
-			this.strengthSelect.value = this.plugin.settings.checkStrength;
+		for (const btn of this.strengthButtons) {
+			btn.classList.toggle('is-active', btn.dataset.strength === this.plugin.settings.checkStrength);
 		}
 
 		// 4. 范围预览：只在「还没有结果」时显示；有结果就收起来（结果界面保持干净）
@@ -352,8 +358,8 @@ export class ExSidebarView extends ItemView {
 
 		this.syncRewritePanel(activePath);
 
-		// 5. 空态、底栏、指令输入与过程信息（全部按当前文件读取，切文件即切状态）
-		this.emptyEl.style.display = entries.length ? 'none' : '';
+		// 5. 空态（仅未打开文档时）、底栏、指令输入与过程信息
+		this.emptyEl.style.display = ctx ? 'none' : '';
 		this.footerEl.classList.toggle('ex-hidden', entries.length === 0);
 		this.acceptAllBtn.textContent = `接受全部（${pending}）`;
 		this.ignoreAllBtn.textContent = `忽略全部（${entries.length}）`;
@@ -363,10 +369,12 @@ export class ExSidebarView extends ItemView {
 		this.statsEl.textContent = this.statsText(activePath);
 	}
 
-	/** 改写预览面板：流式时显示纯文本增量，完成后一次性渲染 diff */
+	/** 改写预览面板：流式期间等首个字到达再显示；完成后渲染 diff */
 	private syncRewritePanel(activePath: string | undefined): void {
 		const preview = activePath ? this.plugin.rewriter.getPreview(activePath) : null;
-		this.rewriteBoxEl.classList.toggle('ex-hidden', !preview);
+		// 空内容流式等待期不显示空卡
+		const visible = !!preview && (!!preview.rewritten || !preview.streaming);
+		this.rewriteBoxEl.classList.toggle('ex-hidden', !visible);
 		if (!preview) {
 			this.lastPreviewKey = '';
 			return;
