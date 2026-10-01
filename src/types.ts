@@ -55,6 +55,9 @@ export interface RawIssue {
 /** 检查强度：light 只查错别字标点（最小修改）/ standard 病句+错别字（默认）/ deep 深度润色 */
 export type CheckStrength = 'light' | 'standard' | 'deep';
 
+/** 检查/改写范围：selection 编辑器选区 / paragraph 光标所在段落 / full 全文（两种操作共用） */
+export type CheckScope = 'selection' | 'paragraph' | 'full';
+
 export const STRENGTH_LABELS: Record<CheckStrength, string> = {
 	light: '错别字',
 	standard: '病句',
@@ -73,6 +76,8 @@ export interface ModelPricing {
 /** 重写预览：等待用户确认应用的整段改写 */
 export interface RewritePreview {
   path: string;
+  /** 发起时快照的范围模式（检查/改写共用选择器；重试按此重放） */
+  scope: CheckScope;
   from: number;
   to: number;
   original: string;
@@ -97,6 +102,8 @@ export interface ExSettings {
 	thinkingLevel: ThinkingLevel;
 	/** 检查强度（侧边栏选择器修改，持久化） */
 	checkStrength: CheckStrength;
+	/** 检查/改写范围（侧边栏选择器修改，持久化）；默认选中 */
+	checkScope: CheckScope;
 	/** 按模型名自定义价格（覆盖内置官方价）；键为模型名 */
 	pricing: Record<string, ModelPricing>;
 	/** 快照备份目录（vault 内路径） */

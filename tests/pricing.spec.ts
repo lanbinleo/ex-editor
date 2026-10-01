@@ -10,6 +10,7 @@ const base: ExSettings = {
 	model: 'deepseek-flash',
 	thinkingLevel: 'auto',
 	checkStrength: 'standard',
+	checkScope: 'selection',
 	pricing: {},
 	backupDir: '.exeditor/backups',
 	backupKeep: 20,

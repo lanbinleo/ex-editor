@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS: ExSettings = {
 	model: PRESETS.deepseek?.model ?? '',
 	thinkingLevel: 'auto',
 	checkStrength: 'standard',
+	checkScope: 'selection',
 	pricing: {},
 	backupDir: '.exeditor/backups',
 	backupKeep: 20,

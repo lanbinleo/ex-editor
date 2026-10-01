@@ -9,8 +9,9 @@ import { validateAndLocate } from '../core/validate';
 import { chatCompletionStream } from '../llm/client';
 import { estimateCostYuan, getPricing } from '../llm/pricing';
 import { buildCheckUserPrompt, buildProofreadSystemPrompt } from '../llm/prompts';
+import type { CheckScope } from '../types';
 
-export type CheckScope = 'paragraph' | 'selection' | 'full';
+export type { CheckScope };
 
 /** 全文分批目标字数（顺序执行，避免限流） */
 const BATCH_MAX_CHARS = 3000;
@@ -176,7 +177,7 @@ export class CheckController {
 		if (scope === 'selection') {
 			const sel = state.selection.main;
 			if (sel.empty) {
-				return { label: '待选中', chars: 0, text: '请先在编辑器中选中要检查的文字' };
+				return { label: '待选中', chars: 0, text: '请先在编辑器中选中要检查或改写的文字' };
 			}
 			const text = state.doc.sliceString(sel.from, sel.to);
 			return { label: '选中', chars: text.length, text };

@@ -6,11 +6,14 @@ import { chatCompletionStream } from '../llm/client';
 import { stripMarkupWrapper } from '../llm/outputClean';
 import { estimateCostYuan, getPricing } from '../llm/pricing';
 import { buildRewriteSystemPrompt, buildRewriteUserPrompt } from '../llm/prompts';
-import type { RewritePreview } from '../types';
+import type { CheckScope, RewritePreview } from '../types';
+
+/** 全文改写的字数上限：改写无法像检查那样分批，超长一次请求既慢又贵且输出易截断 */
+const REWRITE_FULL_MAX_CHARS = 30_000;
 
 /**
  * 按指令重写（M3 双轨中的「重写式」）：
- * 选中文字优先（无选区取光标段落）→ 流式改写 → 侧边栏 diff 预览 → 确认应用。
+ * 范围跟随侧边栏选择器（选中/段落/全文，与检查共用）→ 流式改写 → 侧边栏 diff 预览 → 确认应用。
  * 应用前自动快照；应用为单事务，Ctrl+Z 一次撤销。
  */
 export class RewriteController {
@@ -73,8 +76,8 @@ export class RewriteController {
 		}, 400);
 	}
 
-	/** 发起重写：选中文字优先，无选区取光标所在段落 */
-	async run(instruction: string): Promise<void> {
+	/** 发起重写：范围跟随侧边栏选择器（选中/段落/全文，与检查共用） */
+	async run(instruction: string, scope: CheckScope): Promise<void> {
 		const text = instruction.trim();
 		if (!text) {
 			new Notice('请先输入改写要求');
@@ -95,18 +98,48 @@ export class RewriteController {
 			return;
 		}
 		const state = ctx.view.state;
-		const sel = state.selection.main;
-		const scope = sel.empty ? paragraphRange(state) : { from: sel.from, to: sel.to };
-		const scopeText = state.doc.sliceString(scope.from, scope.to);
+		let from: number;
+		let to: number;
+		if (scope === 'full') {
+			if (state.doc.length > REWRITE_FULL_MAX_CHARS) {
+				new Notice(
+					`全文 ${state.doc.length} 字超过改写上限（${REWRITE_FULL_MAX_CHARS}），改写无法分批，请改用选中或段落范围`,
+					6000,
+				);
+				return;
+			}
+			from = 0;
+			to = state.doc.length;
+		} else if (scope === 'selection') {
+			const sel = state.selection.main;
+			if (sel.empty) {
+				new Notice('请先在编辑器中选中要改写的文字');
+				return;
+			}
+			from = sel.from;
+			to = sel.to;
+		} else {
+			const range = paragraphRange(state);
+			from = range.from;
+			to = range.to;
+		}
+		const scopeText = state.doc.sliceString(from, to);
 		if (scopeText.trim().length < 10) {
-			new Notice(sel.empty ? '光标所在段落太短，不值得改写' : '选中的文字太短，不值得改写');
+			new Notice(
+				scope === 'selection'
+					? '选中的文字太短，不值得改写'
+					: scope === 'paragraph'
+						? '光标所在段落太短，不值得改写'
+						: '文档太短，不值得改写',
+			);
 			return;
 		}
 
 		const preview: RewritePreview = {
 			path: ctx.file.path,
-			from: scope.from,
-			to: scope.to,
+			scope,
+			from,
+			to,
 			original: scopeText,
 			rewritten: '',
 			instruction: text,

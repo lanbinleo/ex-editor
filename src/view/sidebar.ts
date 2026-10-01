@@ -1,12 +1,12 @@
 import { ItemView, Menu, setIcon, setTooltip } from 'obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
 import type ExEditorPlugin from '../main';
-import type { ActiveRun, CheckScope, RunProgress } from '../controller/checkController';
+import type { ActiveRun, RunProgress } from '../controller/checkController';
 import { diffTexts, trimTrailingDeletions } from '../core/diff';
 import type { DiffBlock } from '../core/diff';
 import { formatYuan } from '../llm/pricing';
 import { STRENGTH_LABELS } from '../types';
-import type { CheckStrength, RewritePreview } from '../types';
+import type { CheckScope, CheckStrength, RewritePreview } from '../types';
 import { truncate } from '../util';
 import { appendSegs, renderSuggestionCard, updateCardState } from './card';
 
@@ -24,6 +24,13 @@ const SCOPE_OPTIONS: Record<CheckScope, { label: string; icon: string }> = {
 	paragraph: { label: '段落', icon: 'pilcrow' },
 	selection: { label: '选中', icon: 'text-cursor-input' },
 	full: { label: '全文', icon: 'file-text' },
+};
+
+/** 输入框 placeholder 的范围描述（改写跟随范围选择器） */
+const COMPOSER_SCOPE_LABELS: Record<CheckScope, string> = {
+	selection: '选中的文字',
+	paragraph: '当前段落',
+	full: '全文',
 };
 
 const STRENGTH_ICONS: Record<CheckStrength, string> = {
@@ -59,7 +66,6 @@ function fillButton(btn: HTMLElement, icon: string, text?: string): void {
 export class ExSidebarView extends ItemView {
 	private cards = new Map<string, HTMLElement>();
 	private unsubscribers: (() => void)[] = [];
-	private checkScope: CheckScope = 'paragraph';
 	private instructionText = '';
 	private lastPreviewKey = '';
 	private scopeBtn!: HTMLButtonElement;
@@ -108,6 +114,11 @@ export class ExSidebarView extends ItemView {
 
 	getIcon(): string {
 		return 'spell-check';
+	}
+
+	/** 范围选择器（检查与改写共用）：持久化在 settings，改动即保存，重启后保持 */
+	private get checkScope(): CheckScope {
+		return this.plugin.settings.checkScope;
 	}
 
 	async onOpen(): Promise<void> {
@@ -187,14 +198,14 @@ export class ExSidebarView extends ItemView {
 		this.rewriteRetryBtn.addEventListener('click', () => {
 			const ctx = this.plugin.resolver.resolve();
 			const p = ctx && this.plugin.rewriter.getPreview(ctx.file.path);
-			if (p) void this.plugin.rewriter.run(p.instruction);
+			if (p) void this.plugin.rewriter.run(p.instruction, p.scope);
 		});
 		this.rewriteBodyEl = this.rewriteBoxEl.createDiv({ cls: 'ex-rewrite-body' });
 
 		// 聊天式输入框：发送按钮嵌在框内，常驻可见，无内容时置灰
 		const composer = dock.createDiv({ cls: 'ex-composer' });
 		this.composerInput = composer.createEl('textarea', { cls: 'ex-composer-input' });
-		this.composerInput.placeholder = '输入改写要求，改写选中或当前段落…';
+		this.composerInput.placeholder = '输入改写要求…';
 		this.composerInput.rows = 1;
 		this.composerInput.addEventListener('input', () => {
 			this.instructionText = this.composerInput.value;
@@ -213,7 +224,7 @@ export class ExSidebarView extends ItemView {
 			if (!this.instructionText.trim()) {
 				return;
 			}
-			void this.plugin.rewriter.run(this.instructionText);
+			void this.plugin.rewriter.run(this.instructionText, this.checkScope);
 		});
 
 		const statsRow = dock.createDiv({ cls: 'ex-stats-row' });
@@ -251,7 +262,8 @@ export class ExSidebarView extends ItemView {
 					.setIcon(opt.icon)
 					.setChecked(this.checkScope === value)
 					.onClick(() => {
-						this.checkScope = value;
+						this.plugin.settings.checkScope = value;
+						void this.plugin.saveSettings();
 						this.sync();
 					}),
 			);
@@ -364,12 +376,12 @@ export class ExSidebarView extends ItemView {
 			this.idleLabelEl.textContent = '打开一篇文档开始校对';
 			this.idleTextEl.textContent = '';
 			this.idleHintEl.textContent = '';
-		} else if (preview) {
-			this.setIdleIcon(scopeOpt.icon);
-			if (preview.chars > 0) {
-				this.idleLabelEl.textContent = `将检查${preview.label} · ${preview.chars} 字`;
-				this.idleTextEl.textContent = truncate(preview.text.trim(), SCOPE_PREVIEW_CHARS);
-				this.idleHintEl.textContent = '点右上角「检查」开始';
+			} else if (preview) {
+				this.setIdleIcon(scopeOpt.icon);
+				if (preview.chars > 0) {
+					this.idleLabelEl.textContent = `将检查${preview.label} · ${preview.chars} 字`;
+					this.idleTextEl.textContent = truncate(preview.text.trim(), SCOPE_PREVIEW_CHARS);
+					this.idleHintEl.textContent = '点右上角「检查」，或在下方输入改写要求';
 			} else {
 				// 选中范围但没选内容：给出提示，不替用户做决定
 				this.idleLabelEl.textContent = preview.label;
@@ -387,6 +399,13 @@ export class ExSidebarView extends ItemView {
 		setTooltip(this.ignoreAllBtn, `忽略全部 ${entries.length} 条`);
 
 		this.syncRewritePanel(activePath);
+
+		// 输入框提示随范围变化（改写跟随范围选择器）
+		const placeholder = `输入改写要求，改写${COMPOSER_SCOPE_LABELS[this.checkScope]}…`;
+		if (this.composerInput.dataset.exPh !== placeholder) {
+			this.composerInput.dataset.exPh = placeholder;
+			this.composerInput.placeholder = placeholder;
+		}
 
 		this.setComposerMode(rewriting ? 'cancel' : 'send');
 		if (!rewriting) {
