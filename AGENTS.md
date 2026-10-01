@@ -13,7 +13,7 @@
 1. **永不弄丢用户文字**：对文稿的一切批量修改必须合并为单个编辑器事务（可一次 Ctrl+Z 撤销），批量应用前先创建快照。
 2. **定位永不猜测**：AI 建议只在"原文在文中唯一出现"时生效；定位失败即标记 stale 丢弃，宁可漏改不可错改。
 3. **保护区域绝不改写**：frontmatter、代码块、数学公式（`$`/`$$`）、wikilink、图片、行内代码、callout 标记。
-4. **密钥只存本地**：API Key 保存在 `data.json`（已 gitignore），绝不写入代码、文档或提交。
+4. **密钥只存本地**：API Key 按提供商各自保存于 `data.json`（已 gitignore；桌面端 safeStorage 加密落盘为 `enc:` 密文，移动端明文兜底），绝不写入代码、文档或提交。
 5. **UI 禁止全量重建**：侧边栏等界面组件按条目精确增删改（保留 DOM 节点、焦点与滚动位置），禁止 `root.empty()` 式整体重渲染——这是旧版的核心病灶。
 6. 界面文案使用中文；函数名、API、配置名保持英文。
 
@@ -33,8 +33,10 @@
 | `src/core/` | 安全核心纯函数（parse/protected/validate/diff/apply/paragraph/batch），可单测，不依赖 obsidian API |
 | `src/controller/` | 业务编排：`checkController` 三种范围检查（分批/取消/进度）、`suggestionController` 建议管理（内存态） |
 | `src/view/sidebar.ts` + `card.ts` | 侧边栏（精确更新红线在此落实）与建议卡片 DOM |
-| `src/llm/` | LLM 客户端（流式 SSE + 非流式兜底 + 思维链参数）与提示词；`sse.ts` 为纯解析器 |
-| `src/settings.ts` | 设置页与提供商预设 |
+| `src/llm/` | LLM 客户端（流式 SSE + 非流式兜底 + 思维链参数 + GET /models）与提示词；`sse.ts` 为纯解析器 |
+| `src/providers.ts` | 提供商预设/设置迁移/落盘加密转换（纯函数，不依赖 obsidian，可单测） |
+| `src/storage/` | `backup.ts` 快照备份；`secureStore.ts` 密钥 safeStorage 加密（桌面）与明文兜底 |
+| `src/settings.ts` | 设置页（提供商管理/增删/切换、模型列表、思考深度、备份） |
 | `src/editorContext.ts` | 「当前操作的文档」解析（焦点回落到最近编辑的 Markdown 视图） |
 | `esbuild.config.mjs` | 打包配置，entry 固定 `src/main.ts`，CM6/lezer/obsidian 均 external |
 | `tests/*.spec.ts` | vitest 单测；M1 起为移植的核心模块测试 |
