@@ -3,6 +3,7 @@ import type ExEditorPlugin from '../main';
 import { paragraphRange } from '../core/paragraph';
 import { createBackup } from '../storage/backup';
 import { chatCompletionStream } from '../llm/client';
+import { stripMarkupWrapper } from '../llm/outputClean';
 import { estimateCostYuan, getPricing } from '../llm/pricing';
 import { buildRewriteSystemPrompt, buildRewriteUserPrompt } from '../llm/prompts';
 import type { RewritePreview } from '../types';
@@ -111,7 +112,9 @@ export class RewriteController {
 			instruction: text,
 			streaming: true,
 			startedAt: Date.now(),
+			reasoningChars: 0,
 		};
+		// 重试时替换旧预览（含失败的）；正常发起也直接顶掉未确认的旧预览
 		this.previews.set(ctx.file.path, preview);
 		this.runningPath = ctx.file.path;
 		this.abort = new AbortController();
@@ -128,13 +131,18 @@ export class RewriteController {
 				{
 					jsonMode: false,
 					signal: this.abort.signal,
+					onReasoningDelta: (_d, charsSoFar) => {
+						preview.reasoningChars = charsSoFar;
+						this.emit(120);
+					},
 					onContentDelta: (_d, fullSoFar) => {
-						preview.rewritten = fullSoFar;
+						// 流式期间即剥离外围包裹（定界标签/栅栏），否则增量 diff 全文失效
+						preview.rewritten = stripMarkupWrapper(fullSoFar);
 						this.emit(120);
 					},
 				},
 			);
-			preview.rewritten = result.content.trim();
+			preview.rewritten = stripMarkupWrapper(result.content);
 			preview.streaming = false;
 			if (pricing) {
 				// 费用并入会话累计（与检查共用一个口径）
@@ -145,11 +153,16 @@ export class RewriteController {
 			this.emit();
 			new Notice('改写完成，请在侧边栏预览后应用');
 		} catch (err) {
-			this.previews.delete(ctx.file.path);
 			if (this.abort.signal.aborted || (err instanceof Error && err.message === '已取消')) {
+				// 取消：直接丢弃预览，面板收起
+				this.previews.delete(ctx.file.path);
 				new Notice('已取消改写');
 			} else {
-				new Notice(`改写失败 — ${err instanceof Error ? err.message : String(err)}`, 8000);
+				// 失败：保留面板显示错误与重试；部分输出也留作参考
+				preview.streaming = false;
+				preview.error = err instanceof Error ? err.message : String(err);
+				this.emit();
+				new Notice(`改写失败 — ${preview.error}`, 8000);
 			}
 		} finally {
 			this.runningPath = null;
@@ -169,6 +182,10 @@ export class RewriteController {
 		if (!preview) return;
 		if (preview.streaming) {
 			new Notice('改写仍在进行中');
+			return;
+		}
+		if (preview.error) {
+			new Notice('改写失败，请重试或放弃');
 			return;
 		}
 		if (ctx.view.state.doc.sliceString(preview.from, preview.to) !== preview.original) {

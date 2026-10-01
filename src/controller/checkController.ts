@@ -39,21 +39,34 @@ export interface RunSummary {
 	batches: number;
 	/** 本次运行估算费用（元）；模型无价格配置时省略 */
 	costYuan?: number;
+	/** 失败原因；成功运行会清除。侧边栏据此常驻显示错误与重试 */
+	error?: string;
 }
 
-/** 一个文件的进行中检查 */
+/** 一个进行中的检查任务（对侧边栏暴露的最小信息） */
+export interface ActiveRun {
+	id: number;
+	path: string;
+	scope: CheckScope;
+	progress: RunProgress;
+}
+
+/** 一个进行中检查的完整内部状态 */
 interface FileRun {
+	id: number;
+	path: string;
 	abort: AbortController;
 	progress: RunProgress;
 }
 
 /**
- * 检查编排。状态按文件路径隔离：不同文件可并行检查互不干扰，
- * 侧边栏只展示当前活动文件自己的进度与结果。
+ * 检查编排。任务按 id 隔离：同一文件可并行发起多个检查（如多个段落），
+ * 不同文件亦然；侧边栏任务区展示全部进行中任务，可逐个取消。
  */
 export class CheckController {
 	private listeners = new Set<() => void>();
-	private runs = new Map<string, FileRun>();
+	private runs = new Map<number, FileRun>();
+	private nextRunId = 1;
 	private summaries = new Map<string, RunSummary>();
 	private lastEmit = 0;
 	/** 本次会话累计估算费用（元，跨文件），插件加载起算 */
@@ -63,11 +76,19 @@ export class CheckController {
 
 	/** 是否有检查进行中（可限定某文件） */
 	isRunning(path?: string): boolean {
-		return path === undefined ? this.runs.size > 0 : this.runs.has(path);
+		if (path === undefined) return this.runs.size > 0;
+		for (const run of this.runs.values()) if (run.path === path) return true;
+		return false;
 	}
 
-	getProgress(path: string): RunProgress | null {
-		return this.runs.get(path)?.progress ?? null;
+	/** 全部进行中的任务（快照顺序即发起顺序），供侧边栏任务区渲染 */
+	activeRuns(): ActiveRun[] {
+		return Array.from(this.runs.values(), (r) => ({
+			id: r.id,
+			path: r.path,
+			scope: r.progress.scope,
+			progress: r.progress,
+		}));
 	}
 
 	getLastSummary(path: string): RunSummary | null {
@@ -83,15 +104,24 @@ export class CheckController {
 		if (yuan > 0) this.sessionCostYuan += yuan;
 	}
 
-	/** 取消当前活动文件的检查（侧边栏取消按钮） */
+	/** 取消当前活动文件的全部检查（侧边栏停止按钮） */
 	cancelActive(): void {
 		const ctx = this.plugin.resolver.resolve();
 		if (!ctx) return;
-		const run = this.runs.get(ctx.file.path);
-		if (run) {
-			run.abort.abort();
-			new Notice('正在取消…');
+		let n = 0;
+		for (const run of this.runs.values()) {
+			if (run.path === ctx.file.path) {
+				run.abort.abort();
+				n++;
+			}
 		}
+		if (n > 1) new Notice(`正在取消 ${n} 个任务…`);
+		else if (n === 1) new Notice('正在取消…');
+	}
+
+	/** 取消单个任务（任务行的 × 按钮） */
+	cancelRun(id: number): void {
+		this.runs.get(id)?.abort.abort();
 	}
 
 	/** 取消全部进行中的检查（命令面板） */
@@ -104,6 +134,27 @@ export class CheckController {
 	subscribe(fn: () => void): () => void {
 		this.listeners.add(fn);
 		return () => this.listeners.delete(fn);
+	}
+
+	/** 任务结束并入 per-path 汇总：并行任务的用量累加；成功清除旧错误，失败记录新错误 */
+	private mergeSummary(path: string, next: RunSummary): void {
+		const prev = this.summaries.get(path);
+		if (!prev || prev.error) {
+			this.summaries.set(path, next);
+			return;
+		}
+		this.summaries.set(path, {
+			scope: next.scope,
+			accepted: prev.accepted + next.accepted,
+			dropped: prev.dropped + next.dropped,
+			promptTokens: prev.promptTokens + next.promptTokens,
+			completionTokens: prev.completionTokens + next.completionTokens,
+			reasoningTokens: (prev.reasoningTokens ?? 0) + (next.reasoningTokens ?? 0) || undefined,
+			durationMs: prev.durationMs + next.durationMs,
+			batches: prev.batches + next.batches,
+			costYuan: (prev.costYuan ?? 0) + (next.costYuan ?? 0) || undefined,
+			error: next.error,
+		});
 	}
 
 	private emit(throttleMs = 0): void {
@@ -148,10 +199,6 @@ export class CheckController {
 			return 0;
 		}
 		const path = ctx.file.path;
-		if (this.runs.has(path)) {
-			new Notice('这篇文档已有检查正在进行');
-			return 0;
-		}
 		const state = ctx.view.state;
 		const docText = state.doc.toString();
 
@@ -187,7 +234,10 @@ export class CheckController {
 			scopeLabel = '段落';
 		}
 
+		const runId = this.nextRunId++;
 		const run: FileRun = {
+			id: runId,
+			path,
 			abort: new AbortController(),
 			progress: {
 				scope,
@@ -199,7 +249,7 @@ export class CheckController {
 				suggestionsSoFar: 0,
 			},
 		};
-		this.runs.set(path, run);
+		this.runs.set(runId, run);
 		this.emit();
 
 		const summary: RunSummary = {
@@ -286,13 +336,14 @@ export class CheckController {
 			if (run.abort.signal.aborted || (err instanceof Error && err.message === '已取消')) {
 				cancelled = true;
 			} else {
-				new Notice(`检查失败 — ${err instanceof Error ? err.message : String(err)}`, 8000);
+				summary.error = err instanceof Error ? err.message : String(err);
+				new Notice(`检查失败 — ${summary.error}`, 8000);
 			}
 		} finally {
 			summary.durationMs = Date.now() - started;
 			if (runCostYuan > 0) summary.costYuan = runCostYuan;
-			this.runs.delete(path);
-			this.summaries.set(path, summary);
+			this.runs.delete(runId);
+			this.mergeSummary(path, summary);
 			this.emit();
 		}
 

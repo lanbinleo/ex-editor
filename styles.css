@@ -1,11 +1,13 @@
 /*
 ExEditor 样式表。所有类名以 `ex-` 为前缀，避免与宿主及其他插件冲突。
 
-设计原则（继承自旧版的视觉语言）：
- 1. 强调色跟随用户主题（--interactive-accent），不硬编码品牌色
- 2. 正文优先：建议内容当正文读，不加盒子感；只有「改动本身」被标记
- 3. 控件安静：按钮默认透明，悬停才浮现边框与底色
- 4. 类别色只用于语义标记（圆点/波浪线），不参与界面装饰
+设计原则：
+ 1. 控件用 Obsidian 原生样式（按钮、输入框、菜单、clickable-icon），外观跟随主题；
+    可点击的东西在静止时就要看得出来，不靠 hover 才浮现
+ 2. 三段式布局：顶栏（设置 + 主动作）固定、中间结果区滚动占满、底部指令输入固定
+ 3. 图标优先：操作用 lucide 图标 + tooltip，文字只留给内容本身
+ 4. 正文优先：建议内容当正文读，不加盒子感；只有「改动本身」被标记
+ 5. 强调色跟随主题（--interactive-accent）；类别色只用于语义标记（圆点/波浪线）
 */
 
 /* ---------------- 分类色与 diff 色（语义，双主题） ---------------- */
@@ -17,6 +19,8 @@ body {
 	--ex-del-bg: rgba(220, 76, 70, 0.16);
 	--ex-del-line: rgba(220, 76, 70, 0.75);
 	--ex-ins-bg: rgba(70, 167, 88, 0.18);
+	/* 替换色：隐藏删除视图下，替换处的新文字由绿换琥珀，与纯新增区分 */
+	--ex-rep-bg: rgba(217, 159, 29, 0.26);
 }
 
 body.theme-dark {
@@ -27,221 +31,306 @@ body.theme-dark {
 	--ex-del-bg: rgba(255, 120, 130, 0.15);
 	--ex-del-line: rgba(255, 120, 130, 0.8);
 	--ex-ins-bg: rgba(90, 200, 130, 0.16);
+	--ex-rep-bg: rgba(230, 176, 84, 0.2);
 }
 
-/* ---------------- 侧边栏骨架 ---------------- */
+/* ---------------- 骨架：三段式，占满高度 ---------------- */
 .ex-root {
 	--ex-accent: var(--interactive-accent);
-	--ex-gutter: 11px;
-	--ex-radius: 7px;
+	--ex-gutter: 14px;
+	--ex-radius: 8px;
 	--ex-font-body: 14px;
-	--ex-font-ui: 12.5px;
-	--ex-font-meta: 11.5px;
+	--ex-font-ui: 13px;
+	--ex-font-meta: 12px;
 	--ex-line: 1.75;
 
+	/* 覆盖 view-content 默认内边距，由各区自己控制 */
+	padding: 0 !important;
+	display: flex;
+	flex-direction: column;
 	height: 100%;
-	overflow-y: auto;
+	overflow: hidden;
 	font-size: var(--ex-font-ui);
 	/* 面板正文可选中复制；控件关闭选中 */
 	user-select: text;
 	-webkit-user-select: text;
-	/* 作为容器查询的容器：窄面板时收起标题等次要信息 */
-	container-type: inline-size;
 }
 
 .ex-root button {
 	user-select: none;
 	-webkit-user-select: none;
-}
-
-/* 按钮彻底复位：Obsidian 默认按钮是填充矩形，会盖住安静控件的意图 */
-.ex-root button {
-	height: auto;
-	min-height: 0;
-	line-height: normal;
-	text-align: inherit;
-	background: transparent;
-	background-color: transparent;
-	border: 1px solid transparent;
-	box-shadow: none;
-	color: inherit;
-	font-size: var(--ex-font-meta);
-	cursor: pointer;
 	white-space: nowrap;
 }
 
-.ex-root button:hover {
-	box-shadow: none;
-}
-
-.ex-root button:focus-visible {
-	outline: 2px solid var(--ex-accent);
-	outline-offset: 1px;
-}
-
-/* ---------------- 头部（两行） ---------------- */
-.ex-header {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px var(--ex-gutter) 2px;
-}
-
-.ex-identity {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	min-width: 0;
+.ex-main {
 	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
 }
 
-/* 分段控件（检查范围） */
-.ex-seg {
-	display: inline-flex;
-	gap: 1px;
-	padding: 2px;
-	border-radius: var(--radius-s);
-	background: var(--background-modifier-hover);
-}
-
-.ex-seg-item {
-	border: none;
-	border-radius: calc(var(--radius-s) - 1px);
-	padding: 2px 9px;
-	color: var(--text-muted);
-	transition: color 120ms ease, background-color 120ms ease;
-}
-
-.ex-seg-item:hover:not(.is-active):not(:disabled) {
-	color: var(--text-normal);
-}
-
-.ex-seg-item.is-active {
-	background: var(--background-primary);
-	color: var(--text-normal);
-}
-
-.ex-seg-item:disabled {
-	opacity: 0.38;
-	cursor: default;
-}
-
-/* 第二行工具栏：范围与强度两组分段控件，语义分组 */
-.ex-toolbar {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	flex-wrap: wrap;
-	padding: 4px var(--ex-gutter) 2px;
-}
-
-.ex-brand-icon {
+/* ---------------- 按钮内容：图标 + 文字 ---------------- */
+.ex-btn-icon {
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
-	width: 26px;
-	height: 26px;
-	border-radius: var(--ex-radius);
-	background: color-mix(in srgb, var(--ex-accent) 15%, transparent);
-	color: var(--ex-accent);
-	flex-shrink: 0;
 }
 
-.ex-brand-icon .svg-icon {
+.ex-btn-icon .svg-icon {
 	width: 15px;
 	height: 15px;
 }
 
-.ex-identity-text {
-	min-width: 0;
-	line-height: 1.3;
+.ex-root button:has(.ex-btn-icon) {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 }
 
-.ex-brand {
-	font-weight: 600;
+/* 小号原生按钮（列表头、改写预览操作） */
+.ex-root button.ex-small {
+	height: 26px;
+	padding: 0 10px;
+	font-size: var(--ex-font-meta);
+}
+
+.ex-root button.ex-small .svg-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.ex-root button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* 接受类动作：强调色图标/文字 */
+.ex-root .ex-accept {
+	color: var(--ex-accent);
+}
+
+/* ---------------- 顶栏 ---------------- */
+.ex-top {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px var(--ex-gutter);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.ex-top-spacer {
+	flex: 1;
+}
+
+/* 下拉按钮：原生按钮 + 图标 + 当前值 + 下箭头 */
+.ex-root button.ex-pick {
+	height: 30px;
+	padding: 0 8px 0 10px;
+	gap: 5px;
+	font-size: var(--ex-font-ui);
+	min-width: 0;
+}
+
+.ex-pick .ex-btn-icon {
+	color: var(--text-muted);
+}
+
+.ex-pick-chevron {
+	display: inline-flex;
+	color: var(--text-faint);
+}
+
+.ex-pick-chevron .svg-icon {
+	width: 13px;
+	height: 13px;
+}
+
+.ex-root button.ex-run {
+	height: 30px;
+	padding: 0 14px;
+	font-size: var(--ex-font-ui);
+	font-weight: 500;
+}
+
+.ex-run .svg-icon {
+	width: 13px;
+	height: 13px;
+}
+
+/* ---------------- 任务追踪区 ---------------- */
+.ex-tasks {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 10px var(--ex-gutter) 4px;
+}
+
+.ex-task {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 8px 8px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ex-radius);
+	background: var(--background-secondary);
+}
+
+.ex-task-icon {
+	display: inline-flex;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.ex-task-icon .svg-icon {
+	width: 15px;
+	height: 15px;
+}
+
+.ex-task-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.ex-task-title {
+	font-weight: 500;
 	color: var(--text-normal);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-.ex-subtitle {
-	color: var(--text-faint);
+.ex-task-track {
+	position: relative;
+	height: 3px;
+	border-radius: 2px;
+	overflow: hidden;
+	background: var(--background-modifier-border);
+}
+
+.ex-task-bar {
+	height: 100%;
+	width: 0;
+	border-radius: 2px;
+	background: var(--ex-accent);
+	transition: width 240ms ease;
+}
+
+.ex-task-track.is-indeterminate .ex-task-bar {
+	position: absolute;
+	width: 35%;
+	animation: ex-indeterminate 1.3s ease-in-out infinite;
+}
+
+@keyframes ex-indeterminate {
+	from {
+		left: -35%;
+	}
+	to {
+		left: 100%;
+	}
+}
+
+.ex-task-text {
+	color: var(--text-muted);
 	font-size: var(--ex-font-meta);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-/* ---------------- 安静按钮 ---------------- */
-.ex-btn {
+/* 任务取消：常驻红色（警示），悬停加底色 */
+.ex-root button.ex-task-cancel {
+	flex-shrink: 0;
+	width: 26px;
+	height: 26px;
+	padding: 0;
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	padding: 3px 10px;
-	border-radius: var(--radius-s);
-	color: var(--text-muted);
-	transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease,
-		opacity 160ms ease;
-}
-
-.ex-btn:hover:not(:disabled) {
-	border-color: var(--background-modifier-border-hover);
-	background: var(--background-modifier-hover);
-	color: var(--text-normal);
-}
-
-.ex-btn:disabled {
-	opacity: 0.38;
-	cursor: default;
-}
-
-/* 取消（运行态）：安静的红语义，悬停浮现 */
-.ex-btn-cancel {
+	justify-content: center;
 	color: var(--text-error, #d2405a);
 }
 
-.ex-btn-cancel:hover:not(:disabled) {
-	border-color: color-mix(in srgb, var(--text-error, #d2405a) 40%, transparent);
+.ex-root button.ex-task-cancel:hover {
 	background: color-mix(in srgb, var(--text-error, #d2405a) 10%, transparent);
-	color: var(--text-error, #d2405a);
 }
 
-/* 主要动作（检查）：primary 实心按钮，需要压过上面的按钮复位 */
-.ex-root button.mod-cta {
-	background: var(--interactive-accent);
-	background-color: var(--interactive-accent);
-	border: 1px solid var(--interactive-accent);
-	color: var(--text-on-accent);
+/* ---------------- 空态 / 范围预览 ---------------- */
+.ex-idle {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	padding: 40px var(--ex-gutter) 24px;
+	text-align: center;
+}
+
+.ex-idle-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	border-radius: 12px;
+	background: color-mix(in srgb, var(--ex-accent) 12%, transparent);
+	color: var(--ex-accent);
+}
+
+.ex-idle-icon .svg-icon {
+	width: 22px;
+	height: 22px;
+}
+
+.ex-idle-label {
+	color: var(--text-normal);
 	font-weight: 500;
 }
 
-.ex-root button.mod-cta:hover:not(:disabled) {
-	background: var(--interactive-accent-hover);
-	background-color: var(--interactive-accent-hover);
-	border-color: var(--interactive-accent-hover);
-	color: var(--text-on-accent);
+.ex-idle-text {
+	align-self: stretch;
+	text-align: left;
+	color: var(--text-muted);
+	font-size: var(--ex-font-meta);
+	line-height: 1.7;
+	max-height: 10em;
+	overflow: hidden;
+	word-break: break-all;
+	white-space: pre-wrap;
+	padding: 8px 12px;
+	border-radius: var(--ex-radius);
+	background: var(--background-secondary);
+	/* 底部渐隐代替硬截断 */
+	mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+	-webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
 }
 
-.ex-root button.mod-cta:disabled {
-	opacity: 0.5;
-	cursor: default;
+.ex-idle-hint {
+	color: var(--text-faint);
+	font-size: var(--ex-font-meta);
+	line-height: 1.6;
 }
 
-/* 次要主要动作（运行 / 应用 / 接受）：强调色文字的安静按钮，悬停浮现浅染 */
-.ex-btn-run,
-.ex-btn-accept {
-	color: var(--ex-accent);
+/* ---------------- 列表头 ---------------- */
+.ex-list-head {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px var(--ex-gutter);
+	background: var(--background-primary);
+	border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.ex-btn-run:hover:not(:disabled),
-.ex-btn-accept:hover:not(:disabled) {
-	border-color: color-mix(in srgb, var(--ex-accent) 40%, transparent);
-	background: color-mix(in srgb, var(--ex-accent) 10%, transparent);
-	color: var(--ex-accent);
+.ex-list-count {
+	flex: 1;
+	color: var(--text-normal);
+	font-weight: 600;
 }
 
-/* ---------------- 字符级 diff 标记 ---------------- */
+/* ---------------- 词级 diff 标记 ---------------- */
 .ex-diff-del {
 	background: var(--ex-del-bg);
 	color: var(--text-normal);
@@ -256,16 +345,25 @@ body.theme-dark {
 	border-radius: 2px;
 }
 
-/* ---------------- 建议列表 ---------------- */
+/* 「隐藏删除」开关：作用于全部 diff 标记（建议卡片 + 改写预览）。
+ * 纯删除隐藏；替换对（del+ins 相邻）只剩新文字，换替换色与纯新增区分 */
+.ex-root.ex-hide-del .ex-diff-del {
+	display: none;
+}
+
+.ex-root.ex-hide-del .ex-diff-rep .ex-diff-ins {
+	background: var(--ex-rep-bg);
+}
+
+/* ---------------- 建议卡片 ---------------- */
 .ex-list {
 	display: flex;
 	flex-direction: column;
-	padding: 6px 0 0;
 }
 
-/* 无盒子：条目之间只有一条发丝线，悬停浮现极浅底色 */
+/* 无盒子：条目之间一条发丝线，悬停浮现浅底色，点击 = 定位 */
 .ex-card {
-	padding: 10px var(--ex-gutter) 8px;
+	padding: 12px var(--ex-gutter) 14px;
 	border-bottom: 1px solid var(--background-modifier-border);
 	cursor: pointer;
 	transition: background-color 120ms ease, opacity 180ms ease;
@@ -273,10 +371,6 @@ body.theme-dark {
 
 .ex-card:hover {
 	background: var(--background-modifier-hover);
-}
-
-.ex-card:last-child {
-	border-bottom: none;
 }
 
 /* 进/离场动画态：内边距与底边一并收拢，高度由 JS 内联控制，
@@ -299,7 +393,7 @@ body.theme-dark {
 @media (prefers-reduced-motion: reduce) {
 	.ex-card,
 	.ex-card-anim,
-	.ex-stats {
+	.ex-task-bar {
 		animation: none !important;
 		transition: none !important;
 	}
@@ -309,14 +403,15 @@ body.theme-dark {
 	display: flex;
 	align-items: center;
 	gap: 6px;
+	min-height: 26px;
 	font-size: var(--ex-font-meta);
 	color: var(--text-faint);
 	margin-bottom: 4px;
 }
 
 .ex-cat-dot {
-	width: 7px;
-	height: 7px;
+	width: 8px;
+	height: 8px;
 	border-radius: 50%;
 	flex-shrink: 0;
 }
@@ -339,10 +434,32 @@ body.theme-dark {
 
 .ex-card-cat {
 	color: var(--text-muted);
+	font-weight: 500;
 }
 
 .ex-card-sep {
 	color: var(--text-faint);
+}
+
+/* 卡片右上角常驻 ✓ / ✕：原生小按钮，静止时就有底色与边框 */
+.ex-card-actions {
+	display: flex;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.ex-root button.ex-icon-btn {
+	width: 28px;
+	height: 26px;
+	padding: 0;
+	justify-content: center;
+	display: inline-flex;
+	align-items: center;
+}
+
+.ex-root button.ex-icon-btn .svg-icon {
+	width: 15px;
+	height: 15px;
 }
 
 /* 建议正文：当正文读 */
@@ -357,54 +474,14 @@ body.theme-dark {
 .ex-card-expl {
 	color: var(--text-muted);
 	font-size: var(--ex-font-meta);
-	line-height: 1.6;
-	margin-top: 4px;
-}
-
-.ex-card-note {
-	color: var(--text-faint);
-	font-size: var(--ex-font-meta);
-	margin-top: 4px;
-}
-
-.ex-card-actions {
-	display: flex;
-	gap: 4px;
+	line-height: 1.65;
 	margin-top: 6px;
 }
 
-/* ---------------- 底部操作条 ---------------- */
-.ex-footer {
-	display: flex;
-	justify-content: center;
-	padding: 8px var(--ex-gutter) 0;
-}
-
-/* ---------------- 窄面板：选项卡分组紧凑化（标题栏常驻，选项已独立成行不抢空间） ---------------- */
-@container (max-width: 360px) {
-	.ex-seg-item {
-		padding: 2px 6px;
-	}
-}
-
-/* ---------------- 过程信息行 ---------------- */
-.ex-stats {
-	min-height: 18px;
-	padding: 8px var(--ex-gutter) 10px;
-	color: var(--text-faint);
+.ex-card-note {
+	color: var(--text-warning, var(--text-faint));
 	font-size: var(--ex-font-meta);
-	text-align: center;
-	line-height: 1.5;
-	animation: ex-stats-in 240ms ease-out;
-}
-
-@keyframes ex-stats-in {
-	from {
-		opacity: 0;
-	}
-	to {
-		opacity: 1;
-	}
+	margin-top: 6px;
 }
 
 /* ---------------- 通用显隐 ----------------
@@ -414,41 +491,33 @@ body.theme-dark {
 	display: none !important;
 }
 
-/* ---------------- 范围预览 ---------------- */
-.ex-scope {
-	margin: 6px var(--ex-gutter) 0;
-	padding: 2px 0 2px 10px;
-	border-left: 2px solid color-mix(in srgb, var(--ex-accent) 45%, transparent);
-}
-
-.ex-scope-label {
-	color: var(--text-muted);
-	font-size: var(--ex-font-meta);
-	margin-bottom: 2px;
-}
-
-.ex-scope-text {
+.ex-hint {
 	color: var(--text-faint);
 	font-size: var(--ex-font-meta);
-	line-height: 1.6;
-	max-height: 4.8em;
-	overflow: hidden;
-	word-break: break-all;
-	white-space: pre-wrap;
-	/* 底部渐隐代替硬截断 */
-	mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-	-webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+	line-height: 1.5;
 }
 
-/* ---------------- 改写预览 ---------------- */
+/* ---------------- 底部固定区 ---------------- */
+.ex-dock {
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px var(--ex-gutter) 8px;
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+}
+
+/* 改写预览：贴在输入框上方，限高，内部滚动 */
 .ex-rewrite {
-	margin: 6px var(--ex-gutter) 0;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--ex-radius);
-	padding: 8px 10px;
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
+	max-height: 60vh;
+	padding: 10px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ex-radius);
+	background: var(--background-secondary);
 }
 
 .ex-rewrite-toolbar {
@@ -459,27 +528,56 @@ body.theme-dark {
 }
 
 .ex-rewrite-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	font-weight: 600;
 	color: var(--text-normal);
-	font-size: var(--ex-font-ui);
+}
+
+.ex-rewrite-title .ex-btn-icon {
+	color: var(--ex-accent);
 }
 
 .ex-rewrite-actions {
 	display: flex;
-	gap: 4px;
+	align-items: center;
+	gap: 6px;
 	margin-left: auto;
 }
 
+/* 状态行：改写中显示生成进度，完成显示统计 */
+.ex-rewrite-meta {
+	color: var(--text-muted);
+	font-size: var(--ex-font-meta);
+}
+
+/* 失败行：错误信息 + 重试 */
+.ex-rewrite-error {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--text-error, #d2405a);
+	font-size: var(--ex-font-meta);
+	line-height: 1.5;
+}
+
+.ex-rewrite-error-text {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 .ex-rewrite-body {
-	max-height: 320px;
+	min-height: 44px;
 	overflow-y: auto;
 	font-size: var(--ex-font-body);
 	line-height: var(--ex-line);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	border-radius: var(--radius-s);
-	background: var(--background-primary-alt);
-	padding: 8px 9px;
+	background: var(--background-primary);
+	padding: 8px 10px;
 	color: var(--text-normal);
 }
 
@@ -487,24 +585,37 @@ body.theme-dark {
 	color: var(--text-muted);
 }
 
-.ex-hint {
-	color: var(--text-faint);
-	font-size: var(--ex-font-meta);
-	line-height: 1.5;
+/* 流式改写的进行光标：随输出推进逐字前移 */
+.ex-stream-caret::after {
+	content: '▍';
+	color: var(--ex-accent);
+	animation: ex-pulse 1s ease-in-out infinite;
 }
 
-/* ---------------- 指令输入（常驻收起，聚焦展开） ---------------- */
-.ex-bottom {
+/* 聊天式输入框：外框承担输入框外观，textarea 本身去边框，发送按钮嵌在右下 */
+.ex-composer {
 	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	margin-top: 4px;
-	padding: 6px var(--ex-gutter) 8px;
+	align-items: flex-end;
+	gap: 4px;
+	padding: 4px 4px 4px 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ex-radius);
+	background: var(--background-modifier-form-field);
+	transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-.ex-composer-input {
-	width: 100%;
-	min-height: 30px;
+.ex-composer:hover {
+	border-color: var(--background-modifier-border-hover);
+}
+
+.ex-composer:focus-within {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.ex-root textarea.ex-composer-input {
+	flex: 1;
+	min-height: 32px;
 	max-height: 140px;
 	overflow-y: hidden;
 	resize: none;
@@ -512,41 +623,91 @@ body.theme-dark {
 	font-size: var(--ex-font-ui);
 	line-height: 1.6;
 	padding: 5px 10px;
-	border-radius: var(--radius-s);
-	border: 1px solid transparent;
+	border: none;
+	box-shadow: none;
 	background: transparent;
-	color: var(--text-muted);
-	transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
-}
-
-.ex-composer-input:hover {
-	border-color: var(--background-modifier-border);
-}
-
-.ex-composer-input:focus {
-	outline: none;
-	border-color: var(--background-modifier-border-focus);
-	background: var(--background-primary);
 	color: var(--text-normal);
 }
 
-/* 折叠态只有一行输入；聚焦或有内容时展开运行按钮 */
-.ex-bottom .ex-composer-foot {
-	display: none;
+.ex-root textarea.ex-composer-input:focus,
+.ex-root textarea.ex-composer-input:hover {
+	border: none;
+	box-shadow: none;
+	background: transparent;
 }
 
-.ex-bottom.ex-open .ex-composer-foot {
-	display: flex;
-	justify-content: flex-end;
-}
-
-.ex-btn-run {
+.ex-root button.ex-send {
+	flex-shrink: 0;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	color: var(--ex-accent);
 }
 
-.ex-btn-run:hover:not(:disabled) {
-	border-color: color-mix(in srgb, var(--ex-accent) 40%, transparent);
-	background: color-mix(in srgb, var(--ex-accent) 10%, transparent);
+.ex-root button.ex-send:disabled {
+	color: var(--text-faint);
+	opacity: 1;
+}
+
+/* 改写运行中：发送按钮原地变红色取消 */
+.ex-root button.ex-send.ex-cancel {
+	color: var(--text-error, #d2405a);
+}
+
+.ex-root button.ex-send.ex-cancel:hover {
+	background: color-mix(in srgb, var(--text-error, #d2405a) 10%, transparent);
+}
+
+.ex-root button.ex-send.is-busy .svg-icon {
+	animation: ex-pulse 1s ease-in-out infinite;
+}
+
+@keyframes ex-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+
+.ex-stats-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 20px;
+}
+
+.ex-stats {
+	flex: 1;
+	min-width: 0;
+	min-height: 16px;
+	color: var(--text-faint);
+	font-size: 11px;
+	text-align: center;
+	line-height: 1.5;
+}
+
+.ex-stats.is-error {
+	color: var(--text-error, #d2405a);
+	text-align: left;
+	overflow-wrap: anywhere;
+}
+
+.ex-root button.ex-stats-retry {
+	flex-shrink: 0;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+}
+
+.ex-root button.ex-stats-retry .svg-icon {
+	width: 13px;
+	height: 13px;
 }
 
 /* ---------------- 快照模态框（命令面板打开，不在侧边栏内） ---------------- */
@@ -582,15 +743,6 @@ body.theme-dark {
 
 .ex-snap-time {
 	color: var(--text-muted);
-}
-
-/* ---------------- 空态 ---------------- */
-.ex-empty {
-	color: var(--text-faint);
-	font-size: var(--ex-font-ui);
-	text-align: center;
-	padding: 26px var(--ex-gutter);
-	line-height: 1.7;
 }
 
 /* ---------------- 设置页提示 ---------------- */

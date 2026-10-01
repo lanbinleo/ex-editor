@@ -143,31 +143,49 @@ async function postViaFetch(
 	}
 }
 
-/** requestUrl 绕过 CORS（不支持中断与流式，超时后放弃等待，后台请求完成即被忽略） */
-async function postViaRequestUrl(settings: ExSettings, body: ChatBody): Promise<HttpResult> {
+/**
+ * requestUrl 绕过 CORS（不支持中断与流式；取消与超时均只放弃等待，
+ * 后台请求完成即被忽略）。
+ */
+async function postViaRequestUrl(
+	settings: ExSettings,
+	body: ChatBody,
+	signal?: AbortSignal,
+): Promise<HttpResult> {
 	const url = settings.baseURL.replace(/\/+$/, '') + '/chat/completions';
-	const timeout = new Promise<never>((_, reject) => {
+	const onAbort = (): void => {
+		rejectCancel(new LlmError('已取消'));
+	};
+	let rejectCancel: (e: LlmError) => void = () => {};
+	const giveUp = new Promise<never>((_, reject) => {
+		rejectCancel = reject;
 		window.setTimeout(
 			() => reject(new LlmError(`请求超时（${REQUEST_TIMEOUT_SEC}s）`)),
 			REQUEST_TIMEOUT_SEC * 1000,
 		);
 	});
-	const res = await Promise.race([
-		requestUrl({
-			url,
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${settings.apiKey}`,
-			},
-			body: JSON.stringify(body),
-			throw: false,
-		}),
-		timeout,
-	]);
-	const text = typeof res.text === 'string' ? res.text : '';
-	if (res.status >= 400) throw extractApiError(res.status, text);
-	return { status: res.status, text };
+	if (signal?.aborted) onAbort();
+	else signal?.addEventListener('abort', onAbort, { once: true });
+	try {
+		const res = await Promise.race([
+			requestUrl({
+				url,
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${settings.apiKey}`,
+				},
+				body: JSON.stringify(body),
+				throw: false,
+			}),
+			giveUp,
+		]);
+		const text = typeof res.text === 'string' ? res.text : '';
+		if (res.status >= 400) throw extractApiError(res.status, text);
+		return { status: res.status, text };
+	} finally {
+		signal?.removeEventListener('abort', onAbort);
+	}
 }
 
 async function postJson(
@@ -177,7 +195,7 @@ async function postJson(
 ): Promise<HttpResult> {
 	const fetched = await postViaFetch(settings, body, signal);
 	if (fetched) return fetched;
-	return postViaRequestUrl(settings, body);
+	return postViaRequestUrl(settings, body, signal);
 }
 
 export interface ChatOptions {
@@ -248,9 +266,11 @@ export async function chatCompletionStream(
 			return streamOnce(settings, body, options, started);
 		}
 		// 网络层失败（postStream 内部已识别）：去掉流式参数走非流式兜底
+		// 已取消时不降级重发——重发请求会变成取消不掉的请求
 		if (e instanceof LlmError && e.message === '__network__') {
+			if (options.signal?.aborted) throw new LlmError('已取消');
 			body = buildBody(settings, messages, jsonMode, false);
-			return nonStreamOnce(settings, body, options, started);
+			return nonStreamOnce(settings, body, options, started, options.signal);
 		}
 		throw e;
 	}
@@ -286,7 +306,7 @@ async function streamOnce(
 			const text = await res.text();
 			throw extractApiError(res.status, text);
 		}
-		const result = await readStream(res.body, options);
+		const result = await readStream(res.body, options, options.signal);
 		checkChoice(result);
 		return { ...result, durationMs: Date.now() - started };
 	} catch (e) {
@@ -305,6 +325,7 @@ async function streamOnce(
 async function readStream(
 	stream: ReadableStream<Uint8Array>,
 	callbacks: StreamCallbacks,
+	signal?: AbortSignal,
 ): Promise<{
 	content: string;
 	finishReason: string;
@@ -367,6 +388,8 @@ async function readStream(
 		parser.end();
 	} catch (e) {
 		if (e instanceof LlmError) throw e;
+		// 用户取消优先判定：绝不能误报网络错误而触发非流式重发（那是取消不掉的请求）
+		if (signal?.aborted) throw new LlmError('已取消');
 		// 流被外力中断（非用户取消、非超时）：已收到部分内容则容错使用，否则报网络错误
 		if (!content) throw new LlmError('__network__');
 	}
@@ -383,8 +406,9 @@ async function nonStreamOnce(
 	body: ChatBody,
 	callbacks: StreamCallbacks,
 	started: number,
+	signal?: AbortSignal,
 ): Promise<ChatResult> {
-	const res = await postJson(settings, body);
+	const res = await postJson(settings, body, signal);
 	let data: { choices?: unknown[]; usage?: StreamUsage };
 	try {
 		data = JSON.parse(res.text || '{}') as typeof data;

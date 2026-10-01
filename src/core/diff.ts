@@ -1,6 +1,7 @@
 /**
- * 字符级与行对齐 diff，用于建议卡片与重写预览的「正文式标记」：
+ * 词级与行对齐 diff，用于建议卡片与重写预览的「正文式标记」：
  * 只标记改动本身（删=红底删除线、增=绿底），未变文字不加样式。
+ * 颗粒度是词（中文按分词、英文按单词），避免整词替换被拆成字符碎片。
  */
 
 export interface Seg {
@@ -8,19 +9,49 @@ export interface Seg {
 	text: string;
 }
 
-/** LCS 规模上限（字符数乘积），超过则退化为整体替换 */
+/**
+ * LCS 规模上限（token 数乘积），超过则退化为整体替换
+ */
 const MAX_CELLS = 4_000_000;
 
+/** Intl.Segmenter 的最小结构类型（ES2021 lib 未收录；运行时 Chromium 87+/Node 16+ 均有） */
+interface WordSegmenterLike {
+	segment(input: string): Iterable<{ segment: string }>;
+}
+
+const segmenter: WordSegmenterLike | null = (() => {
+	const ctor = (Intl as unknown as {
+		Segmenter?: new (locale: string, options: { granularity: 'word' }) => WordSegmenterLike;
+	}).Segmenter;
+	if (!ctor) return null;
+	try {
+		return new ctor('zh', { granularity: 'word' });
+	} catch {
+		return null;
+	}
+})();
+
 /**
- * 字符级 diff（中文按字、英文数字按串更友好，这里统一按码点切分后做 LCS）。
+ * 分词：中文按词典切成词、英文按单词，空白与标点各自成段；token 拼接等于原文。
+ * 环境不支持 Intl.Segmenter 时回退按码点切分（颗粒度退化为字）。
+ */
+function tokenize(text: string): string[] {
+	if (!segmenter) return Array.from(text);
+	const tokens: string[] = [];
+	for (const s of segmenter.segment(text)) tokens.push(s.segment);
+	return tokens;
+}
+
+/**
+ * 词级 diff（中文按分词、英文按单词比较整词；回退环境下按字）。
  * 返回按顺序拼接后等于 a（只看 equal+del）与 b（只看 equal+ins）的片段序列。
  */
-export function charDiff(a: string, b: string): Seg[] {
+export function wordDiff(a: string, b: string): Seg[] {
 	if (a === b) return [{ type: 'equal', text: a }];
 	if (!a) return [{ type: 'ins', text: b }];
 	if (!b) return [{ type: 'del', text: a }];
-	const xs = Array.from(a);
-	const ys = Array.from(b);
+	const xs = tokenize(a);
+	const ys = tokenize(b);
 	if (xs.length * ys.length > MAX_CELLS) {
 		return [{ type: 'del', text: a }, { type: 'ins', text: b }];
 	}
@@ -78,17 +109,17 @@ export interface DiffBlock {
 }
 
 /**
- * 行对齐 + 行内字符级 diff：
- * 先按行做 LCS 对齐，再把连续的「删行/增行」配对，对每对做字符级 diff，
- * 得到接近「改了哪几个字」的正文式对照。
+ * 行对齐 + 行内词级 diff：
+ * 先按行做 LCS 对齐，再把连续的「删行/增行」配对，对每对做词级 diff，
+ * 得到接近「改了哪几个词」的正文式对照。
  */
 export function diffTexts(aText: string, bText: string): DiffBlock[] {
 	const a = aText.length ? aText.split('\n') : [];
 	const b = bText.length ? bText.split('\n') : [];
 	if (a.length * b.length > 4_000_000) {
 		return [
-			{ kind: 'change', segments: [...charDiff(aText, '')] },
-			{ kind: 'change', segments: [...charDiff('', bText)] },
+			{ kind: 'change', segments: [...wordDiff(aText, '')] },
+			{ kind: 'change', segments: [...wordDiff('', bText)] },
 		];
 	}
 	const n = a.length;
@@ -110,7 +141,7 @@ export function diffTexts(aText: string, bText: string): DiffBlock[] {
 		const segments: Seg[] = [];
 		for (let k = 0; k < pairs; k++) {
 			if (k > 0) segments.push({ type: 'equal', text: '\n' });
-			segments.push(...charDiff(delRun[k] ?? '', addRun[k] ?? ''));
+			segments.push(...wordDiff(delRun[k] ?? '', addRun[k] ?? ''));
 		}
 		for (let k = pairs; k < delRun.length; k++) {
 			if (segments.length) segments.push({ type: 'equal', text: '\n' });

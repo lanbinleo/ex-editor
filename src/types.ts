@@ -72,15 +72,19 @@ export interface ModelPricing {
 
 /** 重写预览：等待用户确认应用的整段改写 */
 export interface RewritePreview {
-	path: string;
-	from: number;
-	to: number;
-	original: string;
-	rewritten: string;
-	instruction: string;
-	/** 流式进行中：界面先显示纯文本，完成后切换为 diff */
-	streaming: boolean;
-	startedAt: number;
+  path: string;
+  from: number;
+  to: number;
+  original: string;
+  rewritten: string;
+  instruction: string;
+  /** 流式进行中：界面实时渲染 diff（边生成边对照） */
+  streaming: boolean;
+  startedAt: number;
+  /** 流式累计的思考字数（与检查任务的「思考中… N 字」同口径） */
+  reasoningChars: number;
+  /** 失败原因；失败时预览保留在面板内展示错误与重试，取消则直接丢弃 */
+  error?: string;
 }
 
 /** M1 设置：单一 OpenAI 兼容提供商，密钥只存本地 data.json */
