@@ -1,5 +1,5 @@
 import { requestUrl } from 'obsidian';
-import type { ExSettings } from '../types';
+import type { ProviderConfig } from '../types';
 import { createSseParser } from './sse';
 
 /** M2 起生成参数仍保持固定收敛：校对要稳定输出，不追求发散 */
@@ -71,13 +71,13 @@ interface ChatBody {
 }
 
 function buildBody(
-	settings: ExSettings,
+	provider: ProviderConfig,
 	messages: ChatMessage[],
 	jsonMode: boolean,
 	stream: boolean,
 ): ChatBody {
 	const body: ChatBody = {
-		model: settings.model,
+		model: provider.model,
 		messages,
 		temperature: TEMPERATURE,
 		max_tokens: MAX_TOKENS,
@@ -85,7 +85,7 @@ function buildBody(
 	};
 	if (stream) body.stream_options = { include_usage: true };
 	if (jsonMode) body.response_format = { type: 'json_object' };
-	switch (settings.thinkingLevel) {
+	switch (provider.thinkingLevel) {
 		case 'off':
 			body.thinking = { type: 'disabled' };
 			break;
@@ -93,7 +93,7 @@ function buildBody(
 		case 'medium':
 		case 'high':
 		case 'max':
-			body.reasoning_effort = settings.thinkingLevel;
+			body.reasoning_effort = provider.thinkingLevel;
 			break;
 		default:
 			break; // auto：不发送，跟随服务商默认
@@ -108,11 +108,11 @@ interface HttpResult {
 
 /** 非流式 fetch（可取消、可超时）。网络层失败（CORS/断网）返回 null，交给 requestUrl 兜底。 */
 async function postViaFetch(
-	settings: ExSettings,
+	provider: ProviderConfig,
 	body: ChatBody,
 	signal?: AbortSignal,
 ): Promise<HttpResult | null> {
-	const url = settings.baseURL.replace(/\/+$/, '') + '/chat/completions';
+	const url = provider.baseURL.replace(/\/+$/, '') + '/chat/completions';
 	const controller = new AbortController();
 	const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_SEC * 1000);
 	const onOuterAbort = (): void => controller.abort();
@@ -122,7 +122,7 @@ async function postViaFetch(
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${settings.apiKey}`,
+				Authorization: `Bearer ${provider.apiKey}`,
 			},
 			body: JSON.stringify(body),
 			signal: controller.signal,
@@ -148,11 +148,11 @@ async function postViaFetch(
  * 后台请求完成即被忽略）。
  */
 async function postViaRequestUrl(
-	settings: ExSettings,
+	provider: ProviderConfig,
 	body: ChatBody,
 	signal?: AbortSignal,
 ): Promise<HttpResult> {
-	const url = settings.baseURL.replace(/\/+$/, '') + '/chat/completions';
+	const url = provider.baseURL.replace(/\/+$/, '') + '/chat/completions';
 	const onAbort = (): void => {
 		rejectCancel(new LlmError('已取消'));
 	};
@@ -173,7 +173,7 @@ async function postViaRequestUrl(
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${settings.apiKey}`,
+					Authorization: `Bearer ${provider.apiKey}`,
 				},
 				body: JSON.stringify(body),
 				throw: false,
@@ -189,13 +189,13 @@ async function postViaRequestUrl(
 }
 
 async function postJson(
-	settings: ExSettings,
+	provider: ProviderConfig,
 	body: ChatBody,
 	signal?: AbortSignal,
 ): Promise<HttpResult> {
-	const fetched = await postViaFetch(settings, body, signal);
+	const fetched = await postViaFetch(provider, body, signal);
 	if (fetched) return fetched;
-	return postViaRequestUrl(settings, body, signal);
+	return postViaRequestUrl(provider, body, signal);
 }
 
 export interface ChatOptions {
@@ -248,41 +248,41 @@ function checkChoice(result: { content: string; finishReason: string }): void {
  * fetch 网络层失败时自动回落 requestUrl 非流式（requestUrl 不支持流式）。
  */
 export async function chatCompletionStream(
-	settings: ExSettings,
+	provider: ProviderConfig,
 	messages: ChatMessage[],
 	options: ChatOptions & StreamCallbacks = {},
 ): Promise<ChatResult> {
-	if (!settings.baseURL || !settings.apiKey || !settings.model) {
+	if (!provider.baseURL || !provider.apiKey || !provider.model) {
 		throw new LlmError('请先在 ExEditor 设置中配置 API 地址、密钥与模型');
 	}
 	const started = Date.now();
 	const jsonMode = options.jsonMode !== false;
-	let body = buildBody(settings, messages, jsonMode, true);
+	let body = buildBody(provider, messages, jsonMode, true);
 	try {
-		return await streamOnce(settings, body, options, started);
+		return await streamOnce(provider, body, options, started);
 	} catch (e) {
 		if (e instanceof LlmError && e.retryWithoutJsonMode && body.response_format) {
 			delete body.response_format;
-			return streamOnce(settings, body, options, started);
+			return streamOnce(provider, body, options, started);
 		}
 		// 网络层失败（postStream 内部已识别）：去掉流式参数走非流式兜底
 		// 已取消时不降级重发——重发请求会变成取消不掉的请求
 		if (e instanceof LlmError && e.message === '__network__') {
 			if (options.signal?.aborted) throw new LlmError('已取消');
-			body = buildBody(settings, messages, jsonMode, false);
-			return nonStreamOnce(settings, body, options, started, options.signal);
+			body = buildBody(provider, messages, jsonMode, false);
+			return nonStreamOnce(provider, body, options, started, options.signal);
 		}
 		throw e;
 	}
 }
 
 async function streamOnce(
-	settings: ExSettings,
+	provider: ProviderConfig,
 	body: ChatBody,
 	options: ChatOptions & StreamCallbacks,
 	started: number,
 ): Promise<ChatResult> {
-	const url = settings.baseURL.replace(/\/+$/, '') + '/chat/completions';
+	const url = provider.baseURL.replace(/\/+$/, '') + '/chat/completions';
 	const controller = new AbortController();
 	const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_SEC * 1000);
 	const onOuterAbort = (): void => controller.abort();
@@ -297,7 +297,7 @@ async function streamOnce(
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${settings.apiKey}`,
+				Authorization: `Bearer ${provider.apiKey}`,
 			},
 			body: JSON.stringify(body),
 			signal: controller.signal,
@@ -402,13 +402,13 @@ async function readStream(
 
 /** 非流式兜底/测试连接路径 */
 async function nonStreamOnce(
-	settings: ExSettings,
+	provider: ProviderConfig,
 	body: ChatBody,
 	callbacks: StreamCallbacks,
 	started: number,
 	signal?: AbortSignal,
 ): Promise<ChatResult> {
-	const res = await postJson(settings, body, signal);
+	const res = await postJson(provider, body, signal);
 	let data: { choices?: unknown[]; usage?: StreamUsage };
 	try {
 		data = JSON.parse(res.text || '{}') as typeof data;
@@ -435,21 +435,68 @@ async function nonStreamOnce(
 	return { ...result, durationMs: Date.now() - started };
 }
 
-/** 兼容入口：内部走流式（带回调），行为与 chatCompletionStream 相同 */
-export async function chatCompletion(
-	settings: ExSettings,
-	messages: ChatMessage[],
-	options: ChatOptions = {},
-): Promise<ChatResult> {
-	return chatCompletionStream(settings, messages, options);
-}
-
 /** 设置页「测试连接」（短回复即可） */
-export async function testConnection(settings: ExSettings): Promise<string> {
+export async function testConnection(provider: ProviderConfig): Promise<string> {
 	const result = await chatCompletionStream(
-		settings,
+		provider,
 		[{ role: 'user', content: '请只回复两个字：正常' }],
 		{ jsonMode: false },
 	);
 	return result.content.trim().slice(0, 50);
+}
+
+/**
+ * 获取服务商的可用模型列表（GET /models，OpenAI 兼容协议）。
+ * fetch 优先（可超时），网络层失败回落 requestUrl；失败抛带原因的 LlmError。
+ */
+export async function listModels(provider: ProviderConfig): Promise<string[]> {
+	if (!provider.baseURL || !provider.apiKey) {
+		throw new LlmError('请先填写该提供商的 API 地址与密钥');
+	}
+	const url = provider.baseURL.replace(/\/+$/, '') + '/models';
+	const controller = new AbortController();
+	const timer = window.setTimeout(() => controller.abort(), 30_000);
+	try {
+		const res = await window.fetch(url, {
+			method: 'GET',
+			headers: { Authorization: `Bearer ${provider.apiKey}` },
+			signal: controller.signal,
+		});
+		const text = await res.text();
+		if (!res.ok) throw extractApiError(res.status, text);
+		return parseModelList(text);
+	} catch (e) {
+		if (e instanceof LlmError) throw e;
+		// 网络层失败（多为 CORS）：requestUrl 兜底
+		try {
+			const res = await requestUrl({
+				url,
+				method: 'GET',
+				headers: { Authorization: `Bearer ${provider.apiKey}` },
+				throw: false,
+			});
+			const text = typeof res.text === 'string' ? res.text : '';
+			if (res.status >= 400) throw extractApiError(res.status, text);
+			return parseModelList(text);
+		} catch (e2) {
+			if (e2 instanceof LlmError) throw e2;
+			throw new LlmError('无法连接服务（网络错误或地址不正确）');
+		}
+	} finally {
+		window.clearTimeout(timer);
+	}
+}
+
+function parseModelList(text: string): string[] {
+	let data: { data?: unknown };
+	try {
+		data = JSON.parse(text || '{}') as typeof data;
+	} catch {
+		throw new LlmError('模型列表返回的内容无法解析');
+	}
+	if (!Array.isArray(data.data)) throw new LlmError('返回中没有模型列表（data 数组）');
+	const ids = data.data
+		.map((m) => (m && typeof m === 'object' ? (m as { id?: unknown }).id : undefined))
+		.filter((id): id is string => typeof id === 'string' && id.length > 0);
+	return Array.from(new Set(ids)).sort();
 }

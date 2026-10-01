@@ -4,7 +4,6 @@ import type ExEditorPlugin from '../main';
 import type { ActiveRun, RunProgress } from '../controller/checkController';
 import { diffTexts, trimTrailingDeletions } from '../core/diff';
 import type { DiffBlock } from '../core/diff';
-import { formatYuan } from '../llm/pricing';
 import { STRENGTH_LABELS } from '../types';
 import type { CheckScope, CheckStrength, RewritePreview } from '../types';
 import { truncate } from '../util';
@@ -651,9 +650,6 @@ export class ExSidebarView extends ItemView {
 		if (total > 0) parts.push(`共 ${fmtTokens(total)} tok`);
 		if (s.durationMs > 0) parts.push(fmtDuration(s.durationMs));
 		if (s.batches > 1) parts.push(`${s.batches} 批`);
-		if (typeof s.costYuan === 'number' && s.costYuan > 0) parts.push(`≈ ${formatYuan(s.costYuan)}`);
-		const session = this.plugin.checker.getSessionCostYuan();
-		if (session > 0) parts.push(`累计 ${formatYuan(session)}`);
 		return parts.join(' · ');
 	}
 }

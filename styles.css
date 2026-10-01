@@ -744,8 +744,3 @@ body.theme-dark {
 .ex-snap-time {
 	color: var(--text-muted);
 }
-
-/* ---------------- 设置页提示 ---------------- */
-.ex-setting-hint {
-	margin: -6px 0 12px 0;
-}

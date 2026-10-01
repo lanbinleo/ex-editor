@@ -67,10 +67,20 @@ export const STRENGTH_LABELS: Record<CheckStrength, string> = {
 /** 思考深度：auto 不发参数（跟随服务商默认）/ off 显式关闭 / low·medium·high·max → reasoning_effort */
 export type ThinkingLevel = 'auto' | 'off' | 'low' | 'medium' | 'high' | 'max';
 
-/** 模型价格（人民币元 / 百万 tokens），用于费用估算 */
-export interface ModelPricing {
-	input: number;
-	output: number;
+/** 一个模型服务提供商（OpenAI 兼容协议）。每家独立保存自己的密钥。 */
+export interface ProviderConfig {
+	/** 唯一标识（randomUUID） */
+	id: string;
+	/** 显示名（可编辑） */
+	name: string;
+	/** OpenAI 兼容服务地址，通常以 /v1 结尾 */
+	baseURL: string;
+	/** 内存中恒为明文；落盘时经 safeStorage 加密为 enc: 前缀密文（不可用时明文，data.json 已 gitignore） */
+	apiKey: string;
+	model: string;
+	thinkingLevel: ThinkingLevel;
+	/** 「获取模型列表」（GET /models）拉取的型号清单，供下拉点选；手动输入不受限 */
+	models?: string[];
 }
 
 /** 重写预览：等待用户确认应用的整段改写 */
@@ -92,20 +102,16 @@ export interface RewritePreview {
   error?: string;
 }
 
-/** M1 设置：单一 OpenAI 兼容提供商，密钥只存本地 data.json */
+/** 插件设置：多提供商（每家独立密钥），检查/改写共用一套范围与强度 */
 export interface ExSettings {
-	/** 预设名：deepseek / glm / custom */
-	preset: string;
-	baseURL: string;
-	apiKey: string;
-	model: string;
-	thinkingLevel: ThinkingLevel;
+	/** 全部已配置的提供商（至少一个；添加自预设或自定义） */
+	providers: ProviderConfig[];
+	/** 当前生效的提供商（检查/改写/测试连接均使用它） */
+	activeProviderId: string;
 	/** 检查强度（侧边栏选择器修改，持久化） */
 	checkStrength: CheckStrength;
 	/** 检查/改写范围（侧边栏选择器修改，持久化）；默认选中 */
 	checkScope: CheckScope;
-	/** 按模型名自定义价格（覆盖内置官方价）；键为模型名 */
-	pricing: Record<string, ModelPricing>;
 	/** 快照备份目录（vault 内路径） */
 	backupDir: string;
 	/** 每篇笔记保留的快照数量上限 */

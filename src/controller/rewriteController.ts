@@ -4,7 +4,6 @@ import { paragraphRange } from '../core/paragraph';
 import { createBackup } from '../storage/backup';
 import { chatCompletionStream } from '../llm/client';
 import { stripMarkupWrapper } from '../llm/outputClean';
-import { estimateCostYuan, getPricing } from '../llm/pricing';
 import { buildRewriteSystemPrompt, buildRewriteUserPrompt } from '../llm/prompts';
 import type { CheckScope, RewritePreview } from '../types';
 
@@ -92,8 +91,8 @@ export class RewriteController {
 			new Notice('请先打开一篇 Markdown 文档');
 			return;
 		}
-		const { baseURL, apiKey, model } = this.plugin.settings;
-		if (!baseURL || !apiKey || !model) {
+		const provider = this.plugin.getActiveProvider();
+		if (!provider.baseURL || !provider.apiKey || !provider.model) {
 			new Notice('请先在设置中配置 API 地址、密钥与模型');
 			return;
 		}
@@ -153,10 +152,9 @@ export class RewriteController {
 		this.abort = new AbortController();
 		this.emit();
 
-		const pricing = getPricing(this.plugin.settings, this.plugin.settings.model);
 		try {
 			const result = await chatCompletionStream(
-				this.plugin.settings,
+				provider,
 				[
 					{ role: 'system', content: buildRewriteSystemPrompt(text) },
 					{ role: 'user', content: buildRewriteUserPrompt(scopeText) },
@@ -175,20 +173,14 @@ export class RewriteController {
 					},
 				},
 			);
-		preview.rewritten = stripMarkupWrapper(result.content);
-		preview.streaming = false;
-		if (!preview.rewritten) {
-			// 空输出按失败处理：全删 diff 只会满屏红，无参考价值
-			preview.error = '模型未返回改写内容，请重试';
-			this.emit();
-			new Notice('模型未返回改写内容', 6000);
-			return;
-		}
-		if (pricing) {
-				// 费用并入会话累计（与检查共用一个口径）
-				this.plugin.checker.addSessionCost(
-					estimateCostYuan(pricing, result.promptTokens, result.completionTokens),
-				);
+			preview.rewritten = stripMarkupWrapper(result.content);
+			preview.streaming = false;
+			if (!preview.rewritten) {
+				// 空输出按失败处理：全删 diff 只会满屏红，无参考价值
+				preview.error = '模型未返回改写内容，请重试';
+				this.emit();
+				new Notice('模型未返回改写内容', 6000);
+				return;
 			}
 			this.emit();
 			new Notice('改写完成，请在侧边栏预览后应用');

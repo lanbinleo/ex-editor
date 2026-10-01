@@ -1,55 +1,32 @@
-import { Notice, PluginSettingTab, Setting } from 'obsidian';
+import { Menu, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { App } from 'obsidian';
 import type ExEditorPlugin from './main';
-import { testConnection } from './llm/client';
-import { getPricing } from './llm/pricing';
-import type { ExSettings } from './types';
+import { listModels, testConnection } from './llm/client';
+import { createProvider, getActiveProvider, PROVIDER_PRESETS } from './providers';
+import { isEncryptionAvailable } from './storage/secureStore';
+import type { ExSettings, ThinkingLevel } from './types';
 
-interface Preset {
-	name: string;
-	baseURL: string;
-	model: string;
-	thinkingLevel: ExSettings['thinkingLevel'];
-	hint?: string;
-}
-
-/** 提供商预设：DeepSeek / GLM / 自定义（Kimi/OpenAI/Ollama 等 M5 补全）。
- *  deepseek-chat/reasoner 已于 2026-07 停用，官方模型为 deepseek-flash / deepseek-v4-pro。 */
-export const PRESETS: Record<string, Preset> = {
-	deepseek: {
-		name: 'DeepSeek',
-		baseURL: 'https://api.deepseek.com/v1',
-		model: 'deepseek-flash',
-		thinkingLevel: 'auto',
-		hint: '推理更强可改用 deepseek-v4-pro，或在下方调高思考深度',
-	},
-	glm: {
-		name: '智谱 GLM',
-		baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-		model: 'glm-4.6',
-		thinkingLevel: 'off',
-	},
-	custom: {
-		name: '自定义（任意 OpenAI 兼容服务）',
-		baseURL: '',
-		model: '',
-		thinkingLevel: 'auto',
-		hint: '填入服务商的 baseURL（通常以 /v1 结尾）与模型名',
-	},
-};
+const defaultProvider = createProvider('deepseek');
 
 export const DEFAULT_SETTINGS: ExSettings = {
-	preset: 'deepseek',
-	baseURL: PRESETS.deepseek?.baseURL ?? '',
-	apiKey: '',
-	model: PRESETS.deepseek?.model ?? '',
-	thinkingLevel: 'auto',
+	providers: [defaultProvider],
+	activeProviderId: defaultProvider.id,
 	checkStrength: 'standard',
 	checkScope: 'selection',
-	pricing: {},
 	backupDir: '.exeditor/backups',
 	backupKeep: 20,
 };
+
+/** 密钥存储状态描述（加密与否取决于本机是否可用 safeStorage） */
+function keyStorageDesc(active: { apiKey: string }): string {
+	const encrypted = isEncryptionAvailable();
+	if (active.apiKey) {
+		return `已配置（尾号 ${active.apiKey.slice(-4)}），${
+			encrypted ? '加密保存在本机 data.json' : '明文保存在本机 data.json（本设备不支持加密）'
+		}`;
+	}
+	return `服务商控制台获取，${encrypted ? '加密' : '明文'}保存在本机 data.json（已排除出 Git）`;
+}
 
 export class ExSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: ExEditorPlugin) {
@@ -60,35 +37,34 @@ export class ExSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		const s = this.plugin.settings;
+		const active = getActiveProvider(s);
 
 		new Setting(containerEl).setName('模型服务').setHeading();
 
 		new Setting(containerEl)
-			.setName('服务预设')
-			.setDesc('选择常用服务商自动填入地址与模型，之后可自由修改')
+			.setName('当前提供商')
+			.setDesc('检查与改写都使用当前提供商的地址、密钥与模型；每家提供商独立保存密钥')
 			.addDropdown((drop) => {
-				for (const [key, preset] of Object.entries(PRESETS)) {
-					drop.addOption(key, preset.name);
-				}
-			drop.setValue(s.preset).onChange(async (value) => {
-				s.preset = value;
-				const preset = PRESETS[value];
-				if (preset) {
-					s.baseURL = preset.baseURL;
-					s.model = preset.model;
-					s.thinkingLevel = preset.thinkingLevel;
-				}
-				await this.plugin.saveSettings();
-				this.display();
+				for (const p of s.providers) drop.addOption(p.id, p.name || '未命名');
+				drop.setValue(active.id).onChange(async (id) => {
+					s.activeProviderId = id;
+					await this.plugin.saveSettings();
+					this.display();
+				});
 			});
-			});
-		const preset = PRESETS[s.preset];
-		if (preset?.hint) {
-			containerEl.createDiv({
-				cls: 'setting-item-description ex-setting-hint',
-				text: `提示：${preset.hint}`,
-			});
-		}
+
+		new Setting(containerEl)
+			.setName('名称')
+			.setDesc('仅用于显示')
+			.addText((text) =>
+				text
+					.setPlaceholder('如 DeepSeek')
+					.setValue(active.name)
+					.onChange(async (value) => {
+						active.name = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl)
 			.setName('API 地址')
@@ -96,40 +72,74 @@ export class ExSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder('填写服务商的 API 地址')
-					.setValue(s.baseURL)
+					.setValue(active.baseURL)
 					.onChange(async (value) => {
-						s.baseURL = value.trim();
+						active.baseURL = value.trim();
 						await this.plugin.saveSettings();
 					}),
 			);
 
 		const apiKeySetting = new Setting(containerEl).setName('API 密钥').addText((text) => {
 			text.inputEl.type = 'password';
-			text.setPlaceholder('形如 sk-…').setValue(s.apiKey).onChange(async (value) => {
-				s.apiKey = value.trim();
+			text.setPlaceholder('形如 sk-…').setValue(active.apiKey).onChange(async (value) => {
+				active.apiKey = value.trim();
 				await this.plugin.saveSettings();
+				apiKeySetting.descEl.setText(keyStorageDesc(active));
 			});
 		});
-		apiKeySetting.descEl.setText(
-			s.apiKey ? `已配置（尾号 ${s.apiKey.slice(-4)}），只保存在本机 data.json` : '服务商控制台获取，只保存在本机 data.json',
-		);
+		apiKeySetting.descEl.setText(keyStorageDesc(active));
 
-		new Setting(containerEl).setName('模型名').addText((text) =>
+		const modelSetting = new Setting(containerEl)
+			.setName('模型')
+			.setDesc('手动输入，或「获取列表」后从服务商的 /models 中选择');
+		modelSetting.addText((text) =>
 			text
 				.setPlaceholder('如 deepseek-flash')
-				.setValue(s.model)
+				.setValue(active.model)
 				.onChange(async (value) => {
-					s.model = value.trim();
+					active.model = value.trim();
 					await this.plugin.saveSettings();
 				}),
 		);
-
-		new Setting(containerEl).setName('思考深度').setHeading();
+		if (active.models?.length) {
+			modelSetting.addButton((button) =>
+				button.setButtonText('选择').onClick((evt) => {
+					const menu = new Menu();
+					for (const model of active.models ?? []) {
+						menu.addItem((item) =>
+							item.setTitle(model).onClick(async () => {
+								active.model = model;
+								await this.plugin.saveSettings();
+								this.display();
+							}),
+						);
+					}
+					menu.showAtMouseEvent(evt);
+				}),
+			);
+		}
+		modelSetting.addButton((button) => {
+			button.setButtonText('获取列表').onClick(async () => {
+				button.setDisabled(true);
+				button.setButtonText('获取中…');
+				try {
+					const models = await listModels(active);
+					active.models = models;
+					if (!active.model && models[0]) active.model = models[0];
+					await this.plugin.saveSettings();
+					new Notice(`获取到 ${models.length} 个模型，可点「选择」挑选`);
+				} catch (e) {
+					new Notice(`获取模型列表失败 — ${e instanceof Error ? e.message : String(e)}`, 8000);
+				} finally {
+					this.display();
+				}
+			});
+		});
 
 		new Setting(containerEl)
-			.setName('深度')
+			.setName('思考深度')
 			.setDesc(
-				'不同服务商支持的档位不同（DeepSeek/GLM：low/high/max；OpenAI：low/medium/high），不支持的档位可能报错，按预设选即可。思考过程与用量显示在侧边栏底部',
+				'不同服务商支持的档位不同（DeepSeek/GLM：low/high/max；OpenAI：low/medium/high），不支持的档位可能报错。思考过程与用量显示在侧边栏底部',
 			)
 			.addDropdown((drop) =>
 				drop
@@ -139,71 +149,19 @@ export class ExSettingTab extends PluginSettingTab {
 					.addOption('medium', '中（reasoning_effort: medium）')
 					.addOption('high', '深（reasoning_effort: high）')
 					.addOption('max', '极致（reasoning_effort: max）')
-					.setValue(s.thinkingLevel)
+					.setValue(active.thinkingLevel)
 					.onChange(async (value) => {
-						s.thinkingLevel = value as ExSettings['thinkingLevel'];
+						active.thinkingLevel = value as ThinkingLevel;
 						await this.plugin.saveSettings();
 					}),
 			);
-
-		new Setting(containerEl).setName('计费').setHeading();
-
-		if (!s.model) {
-			containerEl.createDiv({
-				cls: 'setting-item-description ex-setting-hint',
-				text: '先填写模型名，再配置价格',
-			});
-		} else {
-			const builtin = getPricing(s, s.model);
-			const custom = s.pricing[s.model];
-			let inVal = custom ? String(custom.input) : '';
-			let outVal = custom ? String(custom.output) : '';
-			const save = async (): Promise<void> => {
-				const i = parseFloat(inVal);
-				const o = parseFloat(outVal);
-				const ok = (v: number): boolean => Number.isFinite(v) && v >= 0;
-				if (inVal.trim() === '' && outVal.trim() === '') {
-					delete s.pricing[s.model];
-				} else if (ok(i) && ok(o)) {
-					s.pricing[s.model] = { input: i, output: o };
-				} else {
-					return; // 只填了一项或数值非法：暂不保存
-				}
-				await this.plugin.saveSettings();
-			};
-			new Setting(containerEl)
-				.setName(`「${s.model}」价格`)
-				.setDesc(
-					builtin
-						? `元 / 百万 tokens。内置官方价：输入 ¥${builtin.input} / 输出 ¥${builtin.output}（2026-09 核对，DeepSeek 取高峰价）；填写后覆盖`
-						: '元 / 百万 tokens。该模型无内置价格（如 glm-4.6 已从官方价目表下架），两项都填写后侧边栏显示费用估算',
-				)
-				.addText((text) =>
-					text
-						.setPlaceholder('输入价')
-						.setValue(inVal)
-						.onChange(async (v) => {
-							inVal = v.trim();
-							await save();
-						}),
-				)
-				.addText((text) =>
-					text
-						.setPlaceholder('输出价')
-						.setValue(outVal)
-						.onChange(async (v) => {
-							outVal = v.trim();
-							await save();
-						}),
-				);
-		}
 
 		new Setting(containerEl).setName('测试连接').addButton((button) => {
 			button.setButtonText('发送一条测试消息').onClick(async () => {
 				button.setDisabled(true);
 				button.setButtonText('测试中…');
 				try {
-					const reply = await testConnection(this.plugin.settings);
+					const reply = await testConnection(active);
 					new Notice(`连接成功，模型回复「${reply}」`);
 				} catch (e) {
 					new Notice(`连接失败 — ${e instanceof Error ? e.message : String(e)}`, 8000);
@@ -213,6 +171,52 @@ export class ExSettingTab extends PluginSettingTab {
 				}
 			});
 		});
+
+		new Setting(containerEl).setName('提供商管理').setHeading();
+
+		for (const p of s.providers) {
+			const desc = p.id === s.activeProviderId ? `${p.baseURL || '未配置地址'} · 使用中` : p.baseURL || '未配置地址';
+			new Setting(containerEl)
+				.setName(p.name || '未命名')
+				.setDesc(desc)
+				.addButton((button) =>
+					button
+						.setButtonText('删除')
+						.setDisabled(s.providers.length <= 1)
+						.onClick(async () => {
+							if (s.providers.length <= 1) return;
+							s.providers = s.providers.filter((x) => x.id !== p.id);
+							if (s.activeProviderId === p.id) {
+								s.activeProviderId = s.providers[0]?.id ?? '';
+							}
+							await this.plugin.saveSettings();
+							this.display();
+						}),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName('添加提供商')
+			.setDesc('从预设创建（添加后可自由修改），或添加自定义 OpenAI 兼容服务')
+			.addButton((button) =>
+				button.setButtonText('添加…').onClick((evt) => {
+					const menu = new Menu();
+					for (const [key, preset] of Object.entries(PROVIDER_PRESETS)) {
+						menu.addItem((item) =>
+							item.setTitle(preset.name).onClick(async () => {
+								const created = createProvider(key);
+								s.providers.push(created);
+								// 添加后立即切换为当前，方便接着填写密钥
+								s.activeProviderId = created.id;
+								await this.plugin.saveSettings();
+								this.display();
+							}),
+						);
+					}
+					menu.showAtMouseEvent(evt);
+				}),
+			);
+
 		new Setting(containerEl).setName('备份').setHeading();
 
 		new Setting(containerEl)

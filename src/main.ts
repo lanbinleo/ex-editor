@@ -8,9 +8,10 @@ import { RewriteController } from './controller/rewriteController';
 import { SuggestionController } from './controller/suggestionController';
 import { createBackup, readBackup } from './storage/backup';
 import { ExSettingTab, DEFAULT_SETTINGS } from './settings';
+import { encryptSettingsForSave, getActiveProvider, loadSettingsState } from './providers';
 import { ExSidebarView, VIEW_TYPE_EX_SIDEBAR } from './view/sidebar';
 import { SnapshotModal } from './view/snapshotModal';
-import type { ExSettings } from './types';
+import type { ExSettings, ProviderConfig } from './types';
 
 /**
  * 插件入口：只管生命周期与注册。
@@ -117,25 +118,22 @@ export default class ExEditorPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const stored = (await this.loadData()) as Partial<ExSettings> | null;
-		const merged: ExSettings = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
-		// M2→M3 迁移：reasoningMode + reasoningEffort 合并为 thinkingLevel
-		const legacy = stored as unknown as { reasoningMode?: string; reasoningEffort?: string } | null;
-		if (legacy?.reasoningMode) {
-			if (legacy.reasoningMode === 'off') merged.thinkingLevel = 'off';
-			else if (legacy.reasoningMode === 'effort') {
-				const level = legacy.reasoningEffort;
-				merged.thinkingLevel =
-					level === 'low' || level === 'medium' || level === 'high' || level === 'max'
-						? level
-						: 'medium';
-			} else merged.thinkingLevel = 'auto';
+		const stored = (await this.loadData()) as unknown;
+		const { settings, decryptFailed } = loadSettingsState(stored, DEFAULT_SETTINGS);
+		this.settings = settings;
+		if (decryptFailed > 0) {
+			new Notice(`${decryptFailed} 个 API 密钥无法在此设备解密（可能在他处加密），请到设置中重新填写`, 8000);
 		}
-		this.settings = merged;
 	}
 
 	async saveSettings(): Promise<void> {
-		await this.saveData(this.settings);
+		// 密钥加密后落盘（safeStorage 可用时）；内存中恒为明文
+		await this.saveData(encryptSettingsForSave(this.settings));
+	}
+
+	/** 当前生效的提供商（检查/改写/测试连接共用） */
+	getActiveProvider(): ProviderConfig {
+		return getActiveProvider(this.settings);
 	}
 
 	/** 运行指定范围的检查；有建议时自动展示侧边栏 */

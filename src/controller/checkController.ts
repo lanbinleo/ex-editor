@@ -7,7 +7,6 @@ import { findProtectedRanges } from '../core/protected';
 import { parseIssues } from '../core/parse';
 import { validateAndLocate } from '../core/validate';
 import { chatCompletionStream } from '../llm/client';
-import { estimateCostYuan, getPricing } from '../llm/pricing';
 import { buildCheckUserPrompt, buildProofreadSystemPrompt } from '../llm/prompts';
 import type { CheckScope } from '../types';
 
@@ -38,8 +37,6 @@ export interface RunSummary {
 	reasoningTokens?: number;
 	durationMs: number;
 	batches: number;
-	/** 本次运行估算费用（元）；模型无价格配置时省略 */
-	costYuan?: number;
 	/** 失败原因；成功运行会清除。侧边栏据此常驻显示错误与重试 */
 	error?: string;
 }
@@ -70,8 +67,6 @@ export class CheckController {
 	private nextRunId = 1;
 	private summaries = new Map<string, RunSummary>();
 	private lastEmit = 0;
-	/** 本次会话累计估算费用（元，跨文件），插件加载起算 */
-	private sessionCostYuan = 0;
 
 	constructor(private plugin: ExEditorPlugin) {}
 
@@ -94,15 +89,6 @@ export class CheckController {
 
 	getLastSummary(path: string): RunSummary | null {
 		return this.summaries.get(path) ?? null;
-	}
-
-	getSessionCostYuan(): number {
-		return this.sessionCostYuan;
-	}
-
-	/** 供改写等其他 AI 动作并入会话累计费用 */
-	addSessionCost(yuan: number): void {
-		if (yuan > 0) this.sessionCostYuan += yuan;
 	}
 
 	/** 取消当前活动文件的全部检查（侧边栏停止按钮） */
@@ -153,7 +139,6 @@ export class CheckController {
 			reasoningTokens: (prev.reasoningTokens ?? 0) + (next.reasoningTokens ?? 0) || undefined,
 			durationMs: prev.durationMs + next.durationMs,
 			batches: prev.batches + next.batches,
-			costYuan: (prev.costYuan ?? 0) + (next.costYuan ?? 0) || undefined,
 			error: next.error,
 		});
 	}
@@ -194,8 +179,8 @@ export class CheckController {
 			new Notice('请先打开一篇 Markdown 文档');
 			return 0;
 		}
-		const { baseURL, apiKey, model } = this.plugin.settings;
-		if (!baseURL || !apiKey || !model) {
+		const provider = this.plugin.getActiveProvider();
+		if (!provider.baseURL || !provider.apiKey || !provider.model) {
 			new Notice('请先在设置中配置 API 地址、密钥与模型');
 			return 0;
 		}
@@ -262,9 +247,6 @@ export class CheckController {
 			durationMs: 0,
 			batches: batches.length,
 		};
-		// 价格在运行开始时定格（模型中途改价不影响本次估算）
-		const runPricing = getPricing(this.plugin.settings, this.plugin.settings.model);
-		let runCostYuan = 0;
 		const started = Date.now();
 		let cancelled = false;
 
@@ -283,7 +265,7 @@ export class CheckController {
 				this.emit();
 
 				const result = await chatCompletionStream(
-					this.plugin.settings,
+					provider,
 					[
 						{
 							role: 'system',
@@ -314,15 +296,6 @@ export class CheckController {
 				summary.completionTokens += result.completionTokens;
 				summary.reasoningTokens =
 					(summary.reasoningTokens ?? 0) + (result.reasoningTokens ?? 0) || undefined;
-				if (runPricing) {
-					const batchCost = estimateCostYuan(
-						runPricing,
-						result.promptTokens,
-						result.completionTokens,
-					);
-					runCostYuan += batchCost;
-					this.sessionCostYuan += batchCost;
-				}
 
 				const issues = parseIssues(result.content);
 				const protectedRanges = findProtectedRanges(docText);
@@ -342,7 +315,6 @@ export class CheckController {
 			}
 		} finally {
 			summary.durationMs = Date.now() - started;
-			if (runCostYuan > 0) summary.costYuan = runCostYuan;
 			this.runs.delete(runId);
 			this.mergeSummary(path, summary);
 			this.emit();
