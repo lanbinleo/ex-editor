@@ -142,9 +142,16 @@ export class RewriteController {
 					},
 				},
 			);
-			preview.rewritten = stripMarkupWrapper(result.content);
-			preview.streaming = false;
-			if (pricing) {
+		preview.rewritten = stripMarkupWrapper(result.content);
+		preview.streaming = false;
+		if (!preview.rewritten) {
+			// 空输出按失败处理：全删 diff 只会满屏红，无参考价值
+			preview.error = '模型未返回改写内容，请重试';
+			this.emit();
+			new Notice('模型未返回改写内容', 6000);
+			return;
+		}
+		if (pricing) {
 				// 费用并入会话累计（与检查共用一个口径）
 				this.plugin.checker.addSessionCost(
 					estimateCostYuan(pricing, result.promptTokens, result.completionTokens),

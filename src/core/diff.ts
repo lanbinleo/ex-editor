@@ -109,6 +109,49 @@ export interface DiffBlock {
 }
 
 /**
+ * 流式改写预览专用：从末尾剥离「尚未改写到」的原文（连续 del 段）。
+ * diff 结果里 del 之间夹着纯空白的 equal 分隔段（换行），必须连同可剥离的
+ * del 一起剥掉——否则第一个 '\n' 分隔就会挡住剥离，未改写的原文满屏标红。
+ * change 块被剥空则连同空块继续向前；遇到 same 块或已改写内容即停。
+ * 不修改入参，返回新数组。
+ */
+export function trimTrailingDeletions(blocks: DiffBlock[]): DiffBlock[] {
+	const out = blocks.slice();
+	for (let bi = out.length - 1; bi >= 0; bi--) {
+		const block = out[bi];
+		if (!block || block.kind !== 'change') break;
+		const segs = block.segments.slice();
+		let stripped = false;
+		while (segs.length > 0) {
+			const last = segs[segs.length - 1];
+			if (!last) break;
+			if (last.type === 'del') {
+				segs.pop();
+				stripped = true;
+				continue;
+			}
+			// 空白分隔段：仅当前面还是待剥离的 del/空白时才连带剥掉，否则属于已改写内容的边界
+			if (last.type === 'equal' && last.text.trim() === '' && segs.length >= 2) {
+				const prev = segs[segs.length - 2];
+				if (prev && (prev.type === 'del' || (prev.type === 'equal' && prev.text.trim() === ''))) {
+					segs.pop();
+					continue;
+				}
+			}
+			break;
+		}
+		// 块剥空、或只剩空白分隔（无任何已改写内容）→ 连块一起剥掉，继续向前
+		if (segs.every((s) => s.type !== 'ins' && s.text.trim() === '')) {
+			out.pop();
+			continue;
+		}
+		if (stripped) out[bi] = { kind: block.kind, segments: segs };
+		break;
+	}
+	return out;
+}
+
+/**
  * 行对齐 + 行内词级 diff：
  * 先按行做 LCS 对齐，再把连续的「删行/增行」配对，对每对做词级 diff，
  * 得到接近「改了哪几个词」的正文式对照。

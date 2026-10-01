@@ -2,7 +2,7 @@ import { ItemView, Menu, setIcon, setTooltip } from 'obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
 import type ExEditorPlugin from '../main';
 import type { ActiveRun, CheckScope, RunProgress } from '../controller/checkController';
-import { diffTexts } from '../core/diff';
+import { diffTexts, trimTrailingDeletions } from '../core/diff';
 import type { DiffBlock } from '../core/diff';
 import { formatYuan } from '../llm/pricing';
 import { STRENGTH_LABELS } from '../types';
@@ -545,25 +545,23 @@ export class ExSidebarView extends ItemView {
 
 	/**
 	 * 流式渲染：输出到哪里 diff 到哪里。
-	 * 对「全文原文 vs 已输出」做完整 diff 后，截掉结果尾部连续的 del 段——
-	 * 那是尚未改写到的原文（不是删除），显示出来只会满屏红。
-	 * 初始无输出时结果为空，随输出增长 diff 逐句向前推进。
+	 * 对「全文原文 vs 已输出」做完整 diff 后，截掉尾部尚未改写到的原文（连续 del
+	 * 及其间的空白分隔），随输出增长 diff 逐句向前推进。
+	 * 尚无输出时不渲染 diff——original vs 空串会把原文全部标成删除（满江红）。
 	 */
 	private renderRewriteStream(preview: RewritePreview, showCaret = true): void {
 		const body = this.rewriteBodyEl;
+		if (!preview.rewritten) {
+			body.textContent = '';
+			if (showCaret) body.createSpan({ cls: 'ex-stream-caret' });
+			return;
+		}
 		const stick = body.scrollTop + body.clientHeight >= body.scrollHeight - 12;
 		const prevTop = body.scrollTop;
 		body.empty();
-		const blocks = diffTexts(preview.original, preview.rewritten).slice(0, MAX_DIFF_BLOCKS);
-		// 从末尾截掉连续 del：整块截空则连同空块继续向前
-		for (let bi = blocks.length - 1; bi >= 0; bi--) {
-			const block = blocks[bi];
-			if (!block || block.kind !== 'change') break;
-			const segs = block.segments;
-			while (segs.length > 0 && segs[segs.length - 1]?.type === 'del') segs.pop();
-			if (segs.length > 0) break;
-			blocks.pop();
-		}
+		const blocks = trimTrailingDeletions(
+			diffTexts(preview.original, preview.rewritten).slice(0, MAX_DIFF_BLOCKS),
+		);
 		this.renderDiffBlocks(blocks);
 		if (showCaret) body.createSpan({ cls: 'ex-stream-caret' });
 		body.scrollTop = stick ? body.scrollHeight : prevTop;

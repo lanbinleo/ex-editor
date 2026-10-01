@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffTexts, wordDiff } from '../src/core/diff';
+import { diffTexts, trimTrailingDeletions, wordDiff } from '../src/core/diff';
 
 describe('wordDiff', () => {
 	it('完全相同返回单个 equal', () => {
@@ -81,5 +81,37 @@ describe('diffTexts', () => {
 		const change = blocks.filter((b) => b.kind === 'change');
 		expect(change).toHaveLength(1);
 		expect(change[0]?.segments).toEqual([{ type: 'ins', text: '第二行' }]);
+	});
+});
+
+describe('trimTrailingDeletions（流式改写预览截尾）', () => {
+	const joinText = (blocks: { segments: { text: string }[] }[]): string =>
+		blocks.flatMap((b) => b.segments).map((s) => s.text).join('');
+
+	it('空输出：多行原文全部剥离为空（等待/思考期不渲染任何删除）', () => {
+		const blocks = diffTexts('第一段。\n\n第二段。\n\n第三段。', '');
+		expect(trimTrailingDeletions(blocks)).toEqual([]);
+	});
+
+	it('部分输出：未改写到的原文尾部连同行间分隔一并剥离', () => {
+		const blocks = trimTrailingDeletions(
+			diffTexts('第一段原文。\n\n第二段原文。\n\n第三段原文。', '第一段改写。'),
+		);
+		const text = joinText(blocks);
+		// 第一段的替换 diff（原文→改写）正常保留
+		expect(text).toContain('第一段');
+		expect(text).toContain('改写');
+		expect(text).not.toContain('第二段原文');
+		expect(text).not.toContain('第三段原文');
+	});
+
+	it('行内部分改写：行尾尚未输出的 del 词被剥离', () => {
+		const blocks = trimTrailingDeletions(diffTexts('前半句 后半句', '前半句'));
+		expect(joinText(blocks)).not.toContain('后半句');
+	});
+
+	it('完整输出：尾部是已改写内容，原样保留', () => {
+		const before = diffTexts('旧句子一。\n旧句子二。', '新句子一。\n新句子二。');
+		expect(trimTrailingDeletions(before)).toEqual(before);
 	});
 });
