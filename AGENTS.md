@@ -3,7 +3,7 @@
 ## Project Snapshot
 
 - ExEditor（有经验的编辑）：Obsidian 第三方插件，面向中文写作者的 AI 校对与改稿工具。
-- 当前阶段：M3 已完成发布（0.4.0 验收通过；0.4.1 为社区目录审核反馈修整，CI 构建 + 工件证明）；下一步 M4 编辑器内波浪线标记，见 `docs/roadmap.md`。
+- 当前阶段：M3 已完成发布（0.4.0 验收通过；0.4.1 审核反馈修整 + CI 发布；0.4.2 回退样式改动）；下一步 M4 编辑器内波浪线标记，见 `docs/roadmap.md`。
 - 技术栈：TypeScript（strict）+ esbuild（打包到 `main.js`）+ vitest + eslint（eslint-plugin-obsidianmd）。运行时依赖 Obsidian 内置的 CodeMirror 6（`@codemirror/*` 仅作 devDependencies 提供类型，esbuild 中 external）。
 - 开发位置特殊：本仓库就在 vault 内（`写作人生/.obsidian/plugins/exeditor/`），**构建产物 main.js 即运行时插件**，原地开发，无部署步骤。
 - 本仓库是独立 Git 仓库，vault 的 `.gitignore` 已排除本目录；旧插件 `editing-suggestions` 仍安装在同一 vault（id 不同，共存，M4 后由用户手动停用）。
@@ -46,6 +46,7 @@
 ## Working Rules
 
 - 改动 TS 代码后：`npm run build && npm test && npm run lint` 三绿才算完成。
+- **已验收的 UI 样式（styles.css）与界面结构不得为通过 lint/审核建议而自行调整**——样式类改动仅响应用户明确要求（0.4.1 为消一条 `:has` Warning 改选择器导致按钮布局出错、0.4.2 全量回退的教训）。
 - legacy/ 存档已于 0.4.1 删除（社区目录静态扫描全仓库，存档旧代码的告警被误报为插件问题）：需要旧代码参考时从 git 历史（tag 0.4.0 及更早）检出。
 - 里程碑完成时同步更新 `docs/implementation-status.md`；行为/能力变化同步 `README.md` 与 `docs/product-design.md`。
 - 提交前 `git status` 检查：不得出现 `data.json`、`node_modules/`、`*.map`。

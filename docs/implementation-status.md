@@ -45,6 +45,10 @@
 
 社区目录自动审核反馈修复：manifest 描述去掉 "Obsidian" 并以半角句号结尾；`legacy/` 存档整体移出仓库（审核静态扫描全仓库，存档旧代码的告警被误报为插件问题；tag 0.4.0 及更早的提交仍可查阅）；`button:has(...)` 换为类选择器 `ex-icon-btn`；发布改走 GitHub Actions（`.github/workflows/release.yml`：npm ci → 三绿 → manifest 版本与 tag 一致性校验 → 工件构建来源证明 → 附 `main.js`/`manifest.json`/`styles.css`）。无功能变化。带理由保留的告警：`window.fetch`（流式 SSE 与取消必需，requestUrl 兜底）、`!important`（工具类压过组件 display 声明，有意为之）。
 
+### 发布修整回退（0.4.2，2026-10-02）
+
+回退 0.4.1 的 `:has` → `ex-icon-btn` 类选择器改动——用户真机反馈按钮布局出错，`styles.css` 与 `src/view/sidebar.ts` 还原至 0.4.0 状态（`git diff 9656fd1` 为空）。`:has` 告警改为有意保留（选择器仅作用于侧边栏小范围子树，0.4.0 已真机验收）。教训已入 AGENTS.md Working Rules：已验收样式不得为通过 lint/审核建议自行调整。
+
 ### 真机验收清单（用户操作）
 
 1. 头部强度下拉切「错别字」→ 检查一段：应只出错别字/标点类建议；切「润色」再查：建议更激进

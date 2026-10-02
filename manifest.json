@@ -1,7 +1,7 @@
 {
 	"id": "exeditor",
 	"name": "ExEditor",
-	"version": "0.4.1",
+	"version": "0.4.2",
 	"minAppVersion": "1.7.2",
 	"description": "校对并改写文稿：像有经验的编辑一样圈出问题、解释原因、给出改法，也可按指令整段重写，绝不弄丢你的稿子.",
 	"author": "huozi",

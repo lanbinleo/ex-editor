@@ -53,7 +53,6 @@ function fmtDuration(ms: number): string {
 /** 按钮内容 = 图标 + 可选文字 */
 function fillButton(btn: HTMLElement, icon: string, text?: string): void {
 	btn.empty();
-	btn.addClass('ex-icon-btn');
 	setIcon(btn.createSpan({ cls: 'ex-btn-icon' }), icon);
 	if (text !== undefined) btn.createSpan({ cls: 'ex-btn-text', text });
 }
