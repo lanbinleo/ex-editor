@@ -71,7 +71,8 @@
 
 ## Release Process
 
-- 发布渠道：GitHub Releases（lanbinleo/ex-editor），tag 必须与 manifest 版本一致，Release 附件必须含 `main.js` + `manifest.json`（`styles.css` 一并附上）。`npm version patch|minor` 触发 `version-bump.mjs` 同步 manifest.json 与 versions.json。
+- 发布渠道：GitHub Releases（lanbinleo/ex-editor），Release 附件必须含 `main.js` + `manifest.json`（`styles.css` 一并附上）。`npm version patch|minor` 触发 `version-bump.mjs` 同步 manifest.json 与 versions.json。
+- **Release tag 必须与 manifest 版本完全一致且无 `v` 前缀**（Obsidian 社区目录硬性要求，带 v 会被拒："No release matches your manifest version"）。注意 `npm version` 默认自动打 v 前缀 tag——发布时用 `npm version <type> --no-git-tag-version`，随后手动提交并 `git tag -a <x.y.z>`。
 - 社区市场提交流程（2026-10 确认）：经 community.obsidian.md 开发者面板提交（Obsidian 账号登录 + 关联 GitHub 验证仓库所有权），不再是向 obsidian-releases 提 PR；README 已含英文区块。
 
 ## Documentation Rules

@@ -39,7 +39,7 @@
 | `npm run build` | ✅ 通过 |
 | `npm test`（vitest） | ✅ 14 个文件 93 个测试全过（新增：diff 截尾 4、设置迁移 7、secureStore 9；移除计费 5） |
 | `npm run lint` | ✅ 0 error（信息性 warning：声明式设置 API 与 UI 句式建议，M5 评估） |
-| Obsidian 真机 | ✅ 2026-10-02 用户验收通过；合并 main、发布 GitHub Release v0.4.0（下方验收清单留档备查） |
+| Obsidian 真机 | ✅ 2026-10-02 用户验收通过；合并 main、发布 GitHub Release 0.4.0（下方验收清单留档备查） |
 
 ### 真机验收清单（用户操作）
 
