@@ -41,6 +41,10 @@
 | `npm run lint` | ✅ 0 error（信息性 warning：声明式设置 API 与 UI 句式建议，M5 评估） |
 | Obsidian 真机 | ✅ 2026-10-02 用户验收通过；合并 main、发布 GitHub Release 0.4.0（下方验收清单留档备查） |
 
+### 发布修整（0.4.1，2026-10-02）
+
+社区目录自动审核反馈修复：manifest 描述去掉 "Obsidian" 并以半角句号结尾；`legacy/` 存档整体移出仓库（审核静态扫描全仓库，存档旧代码的告警被误报为插件问题；tag 0.4.0 及更早的提交仍可查阅）；`button:has(...)` 换为类选择器 `ex-icon-btn`；发布改走 GitHub Actions（`.github/workflows/release.yml`：npm ci → 三绿 → manifest 版本与 tag 一致性校验 → 工件构建来源证明 → 附 `main.js`/`manifest.json`/`styles.css`）。无功能变化。带理由保留的告警：`window.fetch`（流式 SSE 与取消必需，requestUrl 兜底）、`!important`（工具类压过组件 display 声明，有意为之）。
+
 ### 真机验收清单（用户操作）
 
 1. 头部强度下拉切「错别字」→ 检查一段：应只出错别字/标点类建议；切「润色」再查：建议更激进

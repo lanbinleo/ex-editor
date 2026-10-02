@@ -1,0 +1,84 @@
+# 发布工作流：推送 x.y.z 格式 tag（无 v 前缀）时触发。
+# 从源码构建 → 三绿校验 → 确认 manifest 版本与 tag 一致 → 工件证明 → 创建 Release 并附产物。
+# 社区目录要求 Release 资产可验证为由本仓库源码构建，故发布一律走本工作流，不在本地出包。
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]*.[0-9]*.[0-9]*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的发布 tag（x.y.z，无 v 前缀）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 解析发布 tag
+        id: tag
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖（按 lockfile）
+        run: npm ci
+
+      - name: 构建
+        run: npm run build
+
+      - name: 测试
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: 校验 manifest 版本与 tag 一致
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          TAG="${{ steps.tag.outputs.tag }}"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "manifest 版本 $VERSION 与 tag $TAG 不一致（社区目录要求完全一致，且无 v 前缀）"
+            exit 1
+          fi
+
+      - name: 生成工件构建来源证明
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      - name: 创建 Release 并附产物
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，仅覆盖资产"
+            gh release upload "$TAG" main.js manifest.json styles.css --clobber --repo "$GITHUB_REPOSITORY"
+          elif [ -f "docs/release-notes/$TAG.md" ]; then
+            gh release create "$TAG" --title "$TAG" --notes-file "docs/release-notes/$TAG.md" main.js manifest.json styles.css --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes main.js manifest.json styles.css --repo "$GITHUB_REPOSITORY"
+          fi

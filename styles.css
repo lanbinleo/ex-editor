@@ -79,7 +79,8 @@ body.theme-dark {
 	height: 15px;
 }
 
-.ex-root button:has(.ex-btn-icon) {
+/* 图标按钮：横向排布（类由 fillButton 创建时挂上，避免 :has 的广谱失效开销） */
+.ex-root button.ex-icon-btn {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;

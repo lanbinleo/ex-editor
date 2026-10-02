@@ -1,6 +1,6 @@
 {
 	"name": "exeditor",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"description": "ExEditor（有经验的编辑）—— Obsidian 内的 AI 校对与改稿搭档",
 	"main": "main.js",
 	"type": "module",

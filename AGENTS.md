@@ -3,7 +3,7 @@
 ## Project Snapshot
 
 - ExEditor（有经验的编辑）：Obsidian 第三方插件，面向中文写作者的 AI 校对与改稿工具。
-- 当前阶段：M3 已完成并发布 v0.4.0（2026-10-02 验收通过，GitHub Release 附 main.js/manifest.json/styles.css）；下一步 M4 编辑器内波浪线标记，见 `docs/roadmap.md`。
+- 当前阶段：M3 已完成发布（0.4.0 验收通过；0.4.1 为社区目录审核反馈修整，CI 构建 + 工件证明）；下一步 M4 编辑器内波浪线标记，见 `docs/roadmap.md`。
 - 技术栈：TypeScript（strict）+ esbuild（打包到 `main.js`）+ vitest + eslint（eslint-plugin-obsidianmd）。运行时依赖 Obsidian 内置的 CodeMirror 6（`@codemirror/*` 仅作 devDependencies 提供类型，esbuild 中 external）。
 - 开发位置特殊：本仓库就在 vault 内（`写作人生/.obsidian/plugins/exeditor/`），**构建产物 main.js 即运行时插件**，原地开发，无部署步骤。
 - 本仓库是独立 Git 仓库，vault 的 `.gitignore` 已排除本目录；旧插件 `editing-suggestions` 仍安装在同一 vault（id 不同，共存，M4 后由用户手动停用）。
@@ -40,13 +40,13 @@
 | `src/editorContext.ts` | 「当前操作的文档」解析（焦点回落到最近编辑的 Markdown 视图） |
 | `esbuild.config.mjs` | 打包配置，entry 固定 `src/main.ts`，CM6/lezer/obsidian 均 external |
 | `tests/*.spec.ts` | vitest 单测；M1 起为移植的核心模块测试 |
-| `legacy/writingbuddy/` | 旧项目只读快照，**不参与构建**，移植时从此复制后在新 src/ 修改 |
+| （legacy/writingbuddy/） | 旧项目存档，**0.4.1 起已从仓库删除**；需要参考时从 git 历史（tag 0.4.0 及更早）取阅，勿再引入仓库 |
 | `docs/` | 产品/路线/状态/流程四份文档，职责见 Documentation Rules |
 
 ## Working Rules
 
 - 改动 TS 代码后：`npm run build && npm test && npm run lint` 三绿才算完成。
-- 从 legacy 移植代码：复制到新 `src/` 后按新架构调整，legacy 文件本身不修改。
+- legacy/ 存档已于 0.4.1 删除（社区目录静态扫描全仓库，存档旧代码的告警被误报为插件问题）：需要旧代码参考时从 git 历史（tag 0.4.0 及更早）检出。
 - 里程碑完成时同步更新 `docs/implementation-status.md`；行为/能力变化同步 `README.md` 与 `docs/product-design.md`。
 - 提交前 `git status` 检查：不得出现 `data.json`、`node_modules/`、`*.map`。
 - 版本号通过 `npm version` 命令变更（自动同步 manifest.json 与 versions.json），不手改。
@@ -71,8 +71,9 @@
 
 ## Release Process
 
-- 发布渠道：GitHub Releases（lanbinleo/ex-editor），Release 附件必须含 `main.js` + `manifest.json`（`styles.css` 一并附上）。`npm version patch|minor` 触发 `version-bump.mjs` 同步 manifest.json 与 versions.json。
-- **Release tag 必须与 manifest 版本完全一致且无 `v` 前缀**（Obsidian 社区目录硬性要求，带 v 会被拒："No release matches your manifest version"）。注意 `npm version` 默认自动打 v 前缀 tag——发布时用 `npm version <type> --no-git-tag-version`，随后手动提交并 `git tag -a <x.y.z>`。
+- 发布渠道：GitHub Releases（lanbinleo/ex-editor），由 GitHub Actions 自动完成（`.github/workflows/release.yml`）：npm ci → build/test/lint → 校验 manifest 版本与 tag 一致 → 生成工件构建来源证明（artifact attestation）→ 创建 Release 并附 `main.js`/`manifest.json`/`styles.css`。**不在本地出包发布**（社区目录要求资产可验证为源码构建）。
+- **Release tag 必须与 manifest 版本完全一致且无 `v` 前缀**（Obsidian 社区目录硬性要求，带 v 会被拒："No release matches your manifest version"）。注意 `npm version` 默认自动打 v 前缀 tag——发布时用 `npm version <type> --no-git-tag-version`，手动提交后打 `git tag -a <x.y.z>` 并推送，CI 接管后续。
+- Release 说明放 `docs/release-notes/<version>.md`（存在则用作 Release notes，否则 GitHub 自动生成）。
 - 社区市场提交流程（2026-10 确认）：经 community.obsidian.md 开发者面板提交（Obsidian 账号登录 + 关联 GitHub 验证仓库所有权），不再是向 obsidian-releases 提 PR；README 已含英文区块。
 
 ## Documentation Rules
@@ -81,7 +82,7 @@
 - 未来计划与非目标 → `docs/roadmap.md`
 - 当前完成状态与验证记录 → `docs/implementation-status.md`
 - 开发流程与版本规则 → `docs/development-workflow.md`
-- 外部原始资料 → `legacy/writingbuddy/design/`（保持来源，不当成已确认决策）
+- 外部原始资料 → git 历史中的 legacy/writingbuddy/design/（已删除，tag 0.4.0 及更早可查；保持来源，不当成已确认决策）
 
 ## Definition of Done
 
