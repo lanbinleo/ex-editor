@@ -3,7 +3,7 @@
 ## Project Snapshot
 
 - ExEditor（有经验的编辑）：Obsidian 第三方插件，面向中文写作者的 AI 校对与改稿工具。
-- 当前阶段：M3 修改层次与指令重写（v0.4.0，dev/0.4.0 分支，待真机验收）；强度三档/指令重写/快照/批量接受已实现，见 `docs/roadmap.md`。
+- 当前阶段：M3 已完成并发布 v0.4.0（2026-10-02 验收通过，GitHub Release 附 main.js/manifest.json/styles.css）；下一步 M4 编辑器内波浪线标记，见 `docs/roadmap.md`。
 - 技术栈：TypeScript（strict）+ esbuild（打包到 `main.js`）+ vitest + eslint（eslint-plugin-obsidianmd）。运行时依赖 Obsidian 内置的 CodeMirror 6（`@codemirror/*` 仅作 devDependencies 提供类型，esbuild 中 external）。
 - 开发位置特殊：本仓库就在 vault 内（`写作人生/.obsidian/plugins/exeditor/`），**构建产物 main.js 即运行时插件**，原地开发，无部署步骤。
 - 本仓库是独立 Git 仓库，vault 的 `.gitignore` 已排除本目录；旧插件 `editing-suggestions` 仍安装在同一 vault（id 不同，共存，M4 后由用户手动停用）。
@@ -71,8 +71,8 @@
 
 ## Release Process
 
-- 暂无对外发布渠道（个人使用）。`npm version patch|minor` 触发 `version-bump.mjs` 同步 manifest.json 与 versions.json。
-- 未来若上社区市场：需补英文 README、检查 manifest 字段完整性与上架审核要求。
+- 发布渠道：GitHub Releases（lanbinleo/ex-editor），tag 必须与 manifest 版本一致，Release 附件必须含 `main.js` + `manifest.json`（`styles.css` 一并附上）。`npm version patch|minor` 触发 `version-bump.mjs` 同步 manifest.json 与 versions.json。
+- 社区市场提交流程（2026-10 确认）：经 community.obsidian.md 开发者面板提交（Obsidian 账号登录 + 关联 GitHub 验证仓库所有权），不再是向 obsidian-releases 提 PR；README 已含英文区块。
 
 ## Documentation Rules
 
@@ -90,7 +90,7 @@
 
 | 事项 | 当前处理 | 何时需要决定 |
 |---|---|---|
-| 是否发布社区插件市场 | 不发布，个人使用 | M5 打磨期 |
+| 是否发布社区插件市场 | 准备中：v0.4.0 已发 GitHub Release，待经 community.obsidian.md 提交 | 提交审核期间 |
 | `main.js` 是否入库 | 入库（构建产物即运行时插件，方便任意 commit 直接可用） | 上 GitHub release 流程时 |
 | `isDesktopOnly` | false，但移动端不做测试承诺 | 出现移动端需求时 |
 | 闲置段落自动检查默认开关 | 默认关闭（roadmap M5） | M5 实现时 |

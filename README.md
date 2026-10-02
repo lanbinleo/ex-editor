@@ -4,7 +4,18 @@ Obsidian 内的 AI 校对与改稿搭档：像一位有经验的编辑坐在你�
 
 本项目是旧插件「编辑建议（editing-suggestions）」的推倒重建：复用其经过单测验证的安全核心，全部 UI 按新架构重写。旧代码存档于 [`legacy/writingbuddy/`](legacy/writingbuddy/)（只读参考）。
 
-## 当前状态：M3 修改层次与指令重写（v0.4.0，dev 分支待真机验收）
+## English
+
+**ExEditor** is an AI copy editor for Obsidian, built for Chinese-language writers. Like an experienced editor sitting beside you, it **flags problems in your draft, explains why, and proposes fixes** — or rewrites a passage to your instruction — and it **never loses your text**.
+
+- **Proofreading**: check the selection, the current paragraph, or the whole note, with three intensity levels (typos only / grammar, default / deep polish). Multiple checks can run in parallel and are cancelable at any time.
+- **Rewrite by instruction**: type a request such as "compress to under 50 characters" and watch a streaming, word-level diff preview (red deletions, green insertions) before anything is applied.
+- **Bring your own model**: DeepSeek, Zhipu GLM, OpenAI, or any OpenAI-compatible endpoint. Each provider keeps its own API key, stored locally only, and encrypted on desktop via the system keychain (`safeStorage`).
+- **Safety protocol**: a suggestion applies only when its original snippet appears exactly once in the note (otherwise it is dropped as stale — miss a fix rather than fix the wrong spot); frontmatter, code blocks, math, wikilinks, images and callout markers are never touched; batch edits land as a single undoable transaction, and a snapshot is written to `.exeditor/backups/` before any batch apply or rewrite.
+
+Requires Obsidian 1.7.2+. The UI and prompts are in Chinese; documentation below is in Chinese as well.
+
+## 当前状态：M3 修改层次与指令重写（v0.4.0，已发布）
 
 在 M2 三种范围 + 流式反馈之上，新增：
 
@@ -21,7 +32,7 @@ Obsidian 内的 AI 校对与改稿搭档：像一位有经验的编辑坐在你�
 | M0 | 0.1.0 | 骨架：可加载、构建/测试/lint 管线就绪、文档齐全 ✅ |
 | M1 | 0.2.0 | 最小安全闭环：检查本段落 → 侧边栏列表 → 接受/忽略 ✅ |
 | M2 | 0.3.0 | 检查范围（段落/选中/全文）、流式、可取消、动效、按文件并行（计费已于 M3 后期移除） ✅ |
-| M3 | 0.4.0 | 检查强度三档、按指令重写（流式实时 diff 预览）、范围统一（默认选中、改写跟随）、多提供商与独立密钥加密、快照备份、批量接受 ✅（待真机验收） |
+| M3 | 0.4.0 | 检查强度三档、按指令重写（流式实时 diff 预览）、范围统一（默认选中、改写跟随）、多提供商与独立密钥加密、快照备份、批量接受 ✅ |
 | M4 | 0.5.0 | 编辑器内波浪线标记、悬浮卡片 |
 | M5 | 0.6.0+ | 闲置自动检查、性能与发布打磨 |
 
